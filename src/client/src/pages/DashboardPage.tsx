@@ -5,47 +5,47 @@ import { apiFetch } from '../hooks/useApi.js';
 
 export function DashboardPage() {
   const [crawling, setCrawling] = useState(false);
-  const [crawlResult, setCrawlResult] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
 
-  const handleCrawl = async () => {
-    setCrawling(true); setCrawlResult(null);
+  const crawl = async () => {
+    setCrawling(true); setMsg(null);
     try {
-      const res = await apiFetch<{ success: boolean; topicsFound: number }>('/api/v1/crawl/trigger', { method: 'POST' });
-      setCrawlResult(`采集 ${res.topicsFound} 条，AI 分析中...`);
-      setTimeout(() => { setCrawlResult(null); window.location.reload(); }, 5000);
-    } catch (e: any) {
-      setCrawlResult(`错误: ${e.message}`);
-    } finally { setCrawling(false); }
+      const r = await apiFetch<{ topicsFound: number }>('/api/v1/crawl/trigger', { method: 'POST' });
+      setMsg(`${r.topicsFound} 条数据已采集，AI 分析中`);
+      setTimeout(() => { setMsg(null); window.location.reload(); }, 6000);
+    } catch (e: any) { setMsg(`错误: ${e.message}`); }
+    finally { setCrawling(false); }
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Spotlight Hero */}
+      <div className="spotlight rounded-2xl bg-surface-card/50 border border-border p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-heading font-extrabold text-text-primary tracking-tight">指挥中心</h1>
-          <p className="text-text-muted text-sm mt-1">关键词驱动 · AI 甄别 · 三级分类</p>
+          <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">
+            <span className="text-text-primary">实时热点</span>
+            <span className="text-brand"> 监控雷达</span>
+          </h1>
+          <p className="text-text-muted text-sm mt-2 max-w-md">
+            AI 驱动的关键词热点追踪 · 多源交叉验证 · 增速监控 · 抢先一步发现趋势
+          </p>
         </div>
         <button
-          onClick={handleCrawl}
+          onClick={crawl}
           disabled={crawling}
-          className="flex items-center gap-2 px-5 py-2.5 bg-brand hover:brightness-110 text-white font-semibold text-sm rounded-lg transition-all disabled:opacity-50 font-heading"
+          className="moving-border shrink-0 inline-flex items-center gap-2 px-6 py-3 bg-brand text-black font-bold text-sm rounded-xl hover:brightness-110 disabled:opacity-50 transition-all cursor-pointer"
         >
           {crawling ? (
-            <><span className="animate-spin w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> 检查中...</>
-          ) : '⚡ 立即检查'}
+            <><span className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" /> 扫描中...</>
+          ) : (
+            <>⚡ 立即扫描</>
+          )}
         </button>
       </div>
-      {crawlResult && <div className="card bg-positive-soft border-positive/20 p-3 text-sm text-positive font-medium">{crawlResult}</div>}
+      {msg && <div className="card border-positive/20 bg-positive/5 px-4 py-3 text-sm text-positive font-medium">{msg}</div>}
 
       <KpiRow />
-
-      <section>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-heading font-semibold text-text-primary">话题矩阵</h2>
-          <span className="text-[11px] text-text-muted font-mono">🚀爆发 · 🔥热点 · 📈潜力</span>
-        </div>
-        <VelocityGrid />
-      </section>
+      <VelocityGrid />
     </div>
   );
 }

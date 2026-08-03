@@ -16,7 +16,7 @@ export function TopicDetailChart({ history }: { history: HP[] }) {
           <XAxis dataKey="time" stroke="#64748B" fontSize={10} tickLine={false} axisLine={false} />
           <YAxis stroke="#64748B" fontSize={10} tickLine={false} axisLine={false} />
           <Tooltip contentStyle={{ backgroundColor: '#111827', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#F1F5F9', fontSize: '12px', fontFamily: 'JetBrains Mono, monospace' }} />
-          <Line type="monotone" dataKey="heat" stroke="#059669" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: '#059669', stroke: '#111827', strokeWidth: 2 }} />
+          <Line type="monotone" dataKey="heat" stroke="#22C55E" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: '#22C55E', stroke: '#111827', strokeWidth: 2 }} />
         </LineChart>
       </ResponsiveContainer>
     </div>
