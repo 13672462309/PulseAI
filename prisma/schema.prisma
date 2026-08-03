@@ -15,6 +15,7 @@ model Keyword {
   isActive        Boolean  @default(true)
   priority        Int      @default(0)
   growthThreshold Float    @default(0.15)
+  searchQueries   String?  // JSON array of English search queries (cached, builtin map + LLM-generated)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -48,6 +49,8 @@ model Topic {
   sourceRank      Int?
   url             String?
   heatIndex       Float    @default(0)
+  heatScore       Float?   // unbounded absolute heat: sqrt(weighted engagement)/2 with source anchors
+  prevHeatScore   Float?   // FIRST observed heatScore (baseline, written once) — growth rate = (current − baseline) / baseline
   rawHeat         Float?
   growthRate      Float?
   velocityScore   Float?
@@ -76,6 +79,7 @@ model TopicHistory {
   id         Int      @id @default(autoincrement())
   topicId    Int
   heatIndex  Float
+  heatScore  Float?   // absolute heat at this observation (trend chart uses this)
   sourceRank Int?
   growthRate Float?
   recordedAt DateTime @default(now())
@@ -97,7 +101,7 @@ model Alert {
   isSent    Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  topic     Topic    @relation(fields: [topicId], references: [id])
+  topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
   keyword   Keyword? @relation(fields: [keywordId], references: [id])
 
   @@index([isRead, createdAt])

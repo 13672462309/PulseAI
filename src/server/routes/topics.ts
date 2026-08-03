@@ -92,10 +92,9 @@ topicsRouter.get('/hot', async (req: Request, res: Response) => {
     const topics = await prisma.topic.findMany({
       where: {
         tier: { not: null },
-        aiVerified: 1,
         lastSeenAt: { gte: new Date(Date.now() - 24 * 3600_000) },
       },
-      orderBy: { heatIndex: 'desc' },
+      orderBy: { heatScore: { sort: 'desc', nulls: 'last' } },
       take: limit,
       include: { source: { select: { name: true, slug: true } } },
     });

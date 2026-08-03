@@ -1,5 +1,5 @@
 import got from 'got';
-import { randomUA } from './utils.js';
+import { calcHeatScore, randomUA } from './utils.js';
 
 interface BaiduItem {
   word: string;
@@ -9,7 +9,7 @@ interface BaiduItem {
   isTop?: boolean;
 }
 
-export async function crawlBaidu(): Promise<Array<{ title: string; url: string; rank: number; heatIndex: number; rawHeat: number | null }>> {
+export async function crawlBaidu(): Promise<Array<{ title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null }>> {
   try {
     const html = await got('https://top.baidu.com/board?tab=realtime', {
       headers: { 'User-Agent': randomUA(), 'Accept': 'text/html' },
@@ -40,6 +40,7 @@ export async function crawlBaidu(): Promise<Array<{ title: string; url: string; 
         url: `https://www.baidu.com/s?wd=${encodeURIComponent(item.word || '')}`,
         rank: i + 1,
         heatIndex: rawHeat ? Math.round((rawHeat / maxHeat) * 100) : Math.max(5, 100 - i * 3),
+        heatScore: rawHeat ? calcHeatScore(rawHeat) : null,
         rawHeat,
       };
     }).filter(t => t.title);

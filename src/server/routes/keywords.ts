@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../db.js';
+import { getSearchQueries } from '../crawlers/keyword-queries.js';
 
 export const keywordsRouter = Router();
 
@@ -30,6 +31,10 @@ keywordsRouter.post('/', async (req: Request, res: Response) => {
         growthThreshold: growthThreshold || 0.15,
       },
     });
+
+    // Pre-warm English search queries (builtin map = free; LLM fallback for unmapped keywords)
+    getSearchQueries(created.keyword).catch(() => {});
+
     res.status(201).json(created);
   } catch (err: any) {
     if (err?.code === 'P2002') {
@@ -45,14 +50,25 @@ keywordsRouter.put('/:id', async (req: Request, res: Response) => {
     const id = parseInt(req.params.id);
     const { keyword, category, growthThreshold } = req.body;
 
+    const existing = await prisma.keyword.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ error: 'Keyword not found' });
+
+    const renamed = keyword?.trim() && keyword.trim() !== existing.keyword;
     const updated = await prisma.keyword.update({
       where: { id },
       data: {
         ...(keyword && { keyword: keyword.trim() }),
         ...(category !== undefined && { category }),
         ...(growthThreshold !== undefined && { growthThreshold }),
+        // Renaming invalidates cached search queries — regenerate
+        ...(renamed ? { searchQueries: null } : {}),
       },
     });
+
+    if (renamed) {
+      getSearchQueries(updated.keyword).catch(() => {});
+    }
+
     res.json(updated);
   } catch (err: any) {
     if (err?.code === 'P2025') {

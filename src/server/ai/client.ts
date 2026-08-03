@@ -63,7 +63,12 @@ export async function aiChat(params: {
       };
     }
 
-    const result = await client.chat.send(request);
+    // @openrouter/sdk v1.2.x expects the Speakeasy wrapper format { chatRequest: {...} }
+    // Hard timeout: DeepSeek responses can hang — without this the pipeline stalls forever
+    const result = await Promise.race([
+      client.chat.send({ chatRequest: request }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('OpenRouter request timeout (120s)')), 120_000)),
+    ]);
 
     // Type narrowing: non-streaming responses have 'choices'
     const response = 'choices' in result ? (result as any) : null;
@@ -75,8 +80,11 @@ export async function aiChat(params: {
 
     if (params.jsonSchema) {
       try {
-        return JSON.parse(content);
+        // Strip markdown code fences — DeepSeek sometimes wraps JSON in ```json ... ```
+        const cleaned = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+        return JSON.parse(cleaned);
       } catch {
+        console.error('[OpenRouter] JSON parse failed. content:', content.slice(0, 300));
         return {};
       }
     }

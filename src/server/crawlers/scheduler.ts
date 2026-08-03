@@ -4,11 +4,12 @@ import { crawlWeibo } from './weibo.js';
 import { crawlBaidu } from './baidu.js';
 import { crawlBilibili } from './bilibili.js';
 import { crawl36Kr } from './kr36.js';
-import { crawlTwitter } from './twitter.js';
 import { crawlWebSearch } from './web-search.js';
 import { crawlBing } from './bing.js';
 import { crawlSogou } from './sogou.js';
-import { crawlGoogle } from './google.js';
+import { crawlHackerNews } from './hacker-news.js';
+import { ensureAllSearchQueries } from './keyword-queries.js';
+import { isLowValueContent } from './content-filter.js';
 import { normalizeTitle } from './utils.js';
 import { broadcastNewTopic, broadcastSourceStatus } from '../socket.js';
 import { runAiPipeline } from '../ai/pipeline.js';
@@ -18,19 +19,23 @@ type CrawlerFn = () => Promise<Array<{
   url: string;
   rank: number;
   heatIndex: number;
+  heatScore: number | null;
   rawHeat: number | null;
 }>>;
+
+// Heat decay: half-life of 24h — mega-hits cool down naturally instead of dominating forever
+const HEAT_HALF_LIFE_HOURS = 24;
+const DECAY_SETTING_KEY = 'last_heat_decay_at';
 
 const CRAWLERS: Record<string, CrawlerFn> = {
   weibo: crawlWeibo,
   baidu: crawlBaidu,
   bilibili: crawlBilibili,
   '36kr': crawl36Kr,
-  twitter: crawlTwitter,
   'web-search': crawlWebSearch,
   bing: crawlBing,
   sogou: crawlSogou,
-  google: crawlGoogle,
+  'hacker-news': crawlHackerNews,
 };
 
 const CRAWL_INTERVAL = parseInt(process.env.CRAWL_INTERVAL_MS || '1800000');
@@ -40,6 +45,9 @@ let running = false;
 let timer: ReturnType<typeof setInterval> | null = null;
 
 export async function crawlAllSources(): Promise<number> {
+  // Decay existing heat scores before the new crawl (24h half-life)
+  await decayHeatScores().catch((err) => console.error('[Scheduler] Heat decay error:', err));
+
   const sources = await prisma.source.findMany({ where: { isActive: true } });
   let totalTopics = 0;
 
@@ -86,10 +94,17 @@ async function crawlSource(source: Source): Promise<number> {
 
   try {
     const rawTopics = await crawler();
-    topicsFound = rawTopics.length;
 
-    // Save ALL topics — AI pipeline will filter by keyword relevance
-    for (const raw of rawTopics) {
+    // Rule-based low-value filter: encyclopedia/dictionary/official-site/tutorial noise
+    const kept = rawTopics.filter((t) => !isLowValueContent(t.title, t.url));
+    const dropped = rawTopics.length - kept.length;
+    if (dropped > 0) {
+      console.log(`[Scheduler] ${source.slug}: dropped ${dropped} low-value items (${rawTopics.length} → ${kept.length})`);
+    }
+    topicsFound = kept.length;
+
+    // Save ALL kept topics — AI pipeline will filter by keyword relevance
+    for (const raw of kept) {
       await saveTopic(raw, source.id);
     }
 
@@ -141,7 +156,7 @@ async function crawlSource(source: Source): Promise<number> {
 }
 
 async function saveTopic(
-  raw: { title: string; url: string; rank: number; heatIndex: number; rawHeat: number | null },
+  raw: { title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null },
   sourceId: number
 ): Promise<void> {
   const normalizedTitle = normalizeTitle(raw.title);
@@ -158,15 +173,22 @@ async function saveTopic(
   if (existing) {
     // Update existing
     const newHeat = (existing.heatIndex * existing.mentionCount + raw.heatIndex) / (existing.mentionCount + 1);
-    // Use rawHeat for growth to avoid normalization artifacts
-    const growthRate = existing.rawHeat && raw.rawHeat
-      ? (raw.rawHeat - existing.rawHeat) / existing.rawHeat
-      : 0;
+
+    // Growth rate vs the FIRST observation (baseline, written once on first sight):
+    // growthRate = (current − baseline) / baseline × 100. Baseline is unaffected by decay.
+    let growthRate: number | null = null;
+    if (raw.heatScore != null && existing.prevHeatScore != null && existing.prevHeatScore > 0) {
+      growthRate = ((raw.heatScore - existing.prevHeatScore) / existing.prevHeatScore) * 100;
+    }
 
     await prisma.topic.update({
       where: { id: existing.id },
       data: {
         heatIndex: newHeat,
+        // Refresh with the freshest observed heat score (previous value was decayed)
+        ...(raw.heatScore != null ? { heatScore: raw.heatScore } : {}),
+        // Baseline is written only once (if this topic's first observation is still missing)
+        ...(raw.heatScore != null && existing.prevHeatScore == null ? { prevHeatScore: raw.heatScore } : {}),
         growthRate,
         lastSeenAt: new Date(),
         mentionCount: { increment: 1 },
@@ -179,6 +201,7 @@ async function saveTopic(
       data: {
         topicId: existing.id,
         heatIndex: newHeat,
+        heatScore: raw.heatScore,
         growthRate,
         sourceRank: raw.rank,
       },
@@ -193,6 +216,8 @@ async function saveTopic(
         sourceRank: raw.rank,
         url: raw.url,
         heatIndex: raw.heatIndex,
+        heatScore: raw.heatScore,
+        prevHeatScore: raw.heatScore, // first observation becomes the growth baseline
         rawHeat: raw.rawHeat,
         firstSeenAt: new Date(),
         lastSeenAt: new Date(),
@@ -243,15 +268,46 @@ async function getRecentFailures(sourceId: number): Promise<number> {
   return fails;
 }
 
+// ── Heat decay (24h half-life) ──
+// Applies exponential decay to all heat scores based on time since the last decay.
+async function decayHeatScores(): Promise<void> {
+  const setting = await prisma.setting.findUnique({ where: { key: DECAY_SETTING_KEY } });
+  const now = Date.now();
+  const last = setting?.value ? new Date(setting.value).getTime() : now;
+  const hours = (now - last) / 3600_000;
+  if (hours <= 0) return;
+
+  const factor = Math.pow(0.5, hours / HEAT_HALF_LIFE_HOURS);
+  await prisma.topic.updateMany({
+    where: { heatScore: { not: null } },
+    data: { heatScore: { multiply: factor } },
+  });
+
+  await prisma.setting.upsert({
+    where: { key: DECAY_SETTING_KEY },
+    create: { key: DECAY_SETTING_KEY, value: new Date(now).toISOString() },
+    update: { value: new Date(now).toISOString() },
+  });
+
+  if (hours > 1) console.log(`[Scheduler] Heat decayed by factor ${factor.toFixed(4)} (${hours.toFixed(1)}h since last)`);
+}
+
 // ── Scheduler ──
 
 export function startScheduler(): void {
   console.log(`[Scheduler] Starting with ${CRAWL_INTERVAL}ms interval`);
 
-  // Run immediately on start
-  crawlAllSources().then((count) => {
-    console.log(`[Scheduler] Initial crawl: ${count} topics`);
+  // Backfill search queries for keywords without a cached mapping (lazy generation)
+  ensureAllSearchQueries().catch((err) => {
+    console.error('[Scheduler] Keyword query backfill error:', err);
   });
+
+  // Run immediately on start (guarded by `running` so the interval never overlaps)
+  running = true;
+  crawlAllSources()
+    .then((count) => console.log(`[Scheduler] Initial crawl: ${count} topics`))
+    .catch((err) => console.error('[Scheduler] Initial crawl error:', err))
+    .finally(() => { running = false; });
 
   // Schedule periodic runs
   timer = setInterval(() => {
@@ -269,6 +325,25 @@ export function startScheduler(): void {
 
 export function stopScheduler(): void {
   if (timer) clearInterval(timer);
+}
+
+/**
+ * Manual crawl trigger (used by POST /api/v1/crawl/trigger).
+ * Shares the `running` guard with the interval scheduler so a manual trigger
+ * never launches a second concurrent crawl + AI pipeline (which caused
+ * duplicate-delete P2025 errors).
+ */
+export async function triggerCrawl(): Promise<{ ok: boolean; count?: number; error?: string }> {
+  if (running) {
+    return { ok: false, error: '爬取已在进行中，请稍候' };
+  }
+  running = true;
+  try {
+    const count = await crawlAllSources();
+    return { ok: true, count };
+  } finally {
+    running = false;
+  }
 }
 
 function sleep(ms: number): Promise<void> {

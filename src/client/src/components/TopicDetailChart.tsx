@@ -1,11 +1,15 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-interface HP { heatIndex: number; growthRate: number | null; recordedAt: string; }
+interface HP { heatIndex: number; heatScore: number | null; growthRate: number | null; recordedAt: string; }
 
 export function TopicDetailChart({ history }: { history: HP[] }) {
   if (!history.length) return <div className="card p-8 text-center text-text-muted text-sm">暂无历史数据</div>;
 
-  const data = history.map(h => ({ time: new Date(h.recordedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }), heat: h.heatIndex }));
+  // 热度趋势使用热度值（heatScore）；旧数据无 heatScore 时回退热力值
+  const data = history.map(h => ({
+    time: new Date(h.recordedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+    heat: h.heatScore ?? h.heatIndex,
+  }));
 
   return (
     <div className="card p-5">

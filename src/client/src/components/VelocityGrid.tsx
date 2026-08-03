@@ -2,7 +2,13 @@ import { useEffect, useRef } from 'react';
 import { Link } from 'react-router';
 import { useApi } from '../hooks/useApi.js';
 
-interface VT { id: number; title: string; velocityScore: number | null; heatIndex: number; growthRate: number | null; aiCategory: string | null; tier: string | null; source: { name: string }; }
+interface VT { id: number; title: string; velocityScore: number | null; heatIndex: number; heatScore: number | null; growthRate: number | null; aiCategory: string | null; tier: string | null; source: { name: string }; }
+
+// Absolute heat display: thousands with locale separators, 万 for 10k+
+function formatHeat(score: number): string {
+  if (score >= 10000) return (score / 10000).toFixed(1) + '万';
+  return score.toLocaleString();
+}
 
 const TIER = {
   burst:  { emoji: '🚀', label: '爆发', bg: 'bg-danger/8', border: 'border-danger/25', text: 'text-danger' },
@@ -11,7 +17,8 @@ const TIER = {
 } as const;
 
 export function VelocityGrid() {
-  const { data, loading } = useApi<VT[]>('/api/v1/stats/velocity');
+  // 实时话题按热度值（heatScore，无界绝对热度）降序展示
+  const { data, loading } = useApi<VT[]>('/api/v1/topics/hot?limit=24');
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,18 +44,20 @@ export function VelocityGrid() {
           <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-danger" /> 爆发</span>
           <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-warning" /> 热点</span>
           <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-positive" /> 潜力</span>
+          <Link to="/topics" className="text-brand hover:underline ml-2">查看全部 →</Link>
         </div>
       </div>
 
       <div ref={ref} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {data.map(t => {
-          const tier = t.tier && TIER[t.tier as keyof typeof TIER];
+          const tier = t.tier ? TIER[t.tier as keyof typeof TIER] : undefined;
+          const tierBorder = tier ? tier.border : 'border-border';
           const heatPct = Math.min(t.heatIndex, 100);
           const barColor = t.tier === 'burst' ? 'bg-danger' : t.tier === 'rising' ? 'bg-positive' : 'bg-warning';
 
           return (
             <Link key={t.id} to={`/topics/${t.id}`}
-              className={`grid-item glow-card card p-4 no-underline group ${tier?.border || 'border-border'} ${t.tier === 'burst' ? 'fracture' : ''}`}
+              className={`grid-item glow-card card p-4 no-underline group ${tierBorder} ${t.tier === 'burst' ? 'fracture' : ''}`}
             >
               {/* Tier badge */}
               <div className="flex items-center justify-between mb-3">
@@ -59,11 +68,14 @@ export function VelocityGrid() {
                 ) : (
                   <span className="text-[10px] font-mono text-text-muted">{t.aiCategory || '未分类'}</span>
                 )}
-                {t.velocityScore != null && (
-                  <span className={`text-[11px] font-mono font-semibold tabular-nums ${t.velocityScore > 15 ? 'text-danger' : t.velocityScore > 5 ? 'text-warning' : 'text-positive'}`}>
-                    {t.velocityScore > 0 ? '+' : ''}{t.velocityScore.toFixed(0)}
-                  </span>
-                )}
+                {(() => {
+                  const v = t.velocityScore ?? 0;
+                  return (
+                    <span className={`text-[11px] font-mono font-semibold tabular-nums ${v > 15 ? 'text-danger' : v > 5 ? 'text-warning' : 'text-positive'}`}>
+                      {v > 0 ? '+' : ''}{v.toFixed(0)}
+                    </span>
+                  );
+                })()}
               </div>
 
               {/* Title */}
@@ -79,7 +91,7 @@ export function VelocityGrid() {
               {/* Footer */}
               <div className="flex items-center justify-between text-[10px] text-text-muted font-mono">
                 <span className="truncate">{t.source?.name}</span>
-                <span className="tabular-nums">{t.heatIndex.toFixed(0)}</span>
+                <span className="tabular-nums">{t.heatScore != null ? formatHeat(t.heatScore) : t.heatIndex.toFixed(0)}</span>
               </div>
             </Link>
           );

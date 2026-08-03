@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:server": "tsx watch src/server/index.ts",
+    "dev:server": "tsx watch src/server/index.ts < NUL",
     "dev:client": "vite --config vite.config.ts",
     "build": "vite build --config vite.config.ts",
     "start": "tsx src/server/index.ts",

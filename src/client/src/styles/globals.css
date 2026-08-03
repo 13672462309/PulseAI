@@ -91,10 +91,10 @@ body {
 .bg-grid {
   position: fixed; inset: 0; pointer-events: none; z-index: 0;
   background-image:
-    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
-  background-size: 40px 40px;
-  mask-image: radial-gradient(ellipse 60% 60% at 50% 30%, black 30%, transparent 70%);
+    linear-gradient(rgba(34,197,94,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34,197,94,0.06) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 70% 70% at 50% 30%, black 20%, transparent 70%);
 }
 
 /* ── Spotlight Heading ── */
@@ -110,7 +110,7 @@ body {
   position: absolute;
   top: -50%; left: -50%;
   width: 200%; height: 200%;
-  background: radial-gradient(circle at center, rgba(34,197,94,0.08) 0%, transparent 60%);
+  background: radial-gradient(circle at center, rgba(34,197,94,0.15) 0%, transparent 50%);
   animation: spotlight 2s ease 0.3s 1 forwards;
   pointer-events: none;
 }
@@ -132,7 +132,7 @@ body {
   content: '';
   position: absolute; inset: -2px;
   border-radius: inherit;
-  background: conic-gradient(from var(--border-angle, 0deg), rgba(34,197,94,0.5), transparent 40%, transparent 60%, rgba(34,197,94,0.5));
+  background: conic-gradient(from var(--border-angle, 0deg), rgba(34,197,94,0.7), transparent 40%, transparent 60%, rgba(34,197,94,0.7));
   animation: border-spin 4s linear infinite;
   opacity: 0;
   transition: opacity 300ms ease;

@@ -20,7 +20,7 @@ statsRouter.get('/', async (_req: Request, res: Response) => {
       }),
       prisma.topic.count({
         where: {
-          velocityScore: { gte: 20 },
+          velocityScore: { gte: 30 },
           lastSeenAt: { gte: new Date(Date.now() - 6 * 3600_000) },
         },
       }),

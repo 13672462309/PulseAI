@@ -23,13 +23,6 @@ const sources = [
     fetchIntervalMs: 1800000,
   },
   {
-    slug: 'google',
-    name: 'Google News',
-    url: 'https://news.google.com',
-    accessType: 'scrape',
-    fetchIntervalMs: 1800000,
-  },
-  {
     slug: 'bilibili',
     name: 'B站热门',
     url: 'https://api.bilibili.com/x/web-interface/popular',
@@ -51,17 +44,17 @@ const sources = [
     fetchIntervalMs: 1800000,
   },
   {
-    slug: 'twitter',
-    name: 'Twitter (X)',
-    url: 'https://api.twitterapi.io/twitter/tweet/advanced_search',
-    accessType: 'api',
-    fetchIntervalMs: 1800000,
-  },
-  {
     slug: 'web-search',
     name: '通用网页搜索',
     url: '',
     accessType: 'scrape',
+    fetchIntervalMs: 1800000,
+  },
+  {
+    slug: 'hacker-news',
+    name: 'Hacker News',
+    url: 'https://hn.algolia.com/api/v1/search',
+    accessType: 'api',
     fetchIntervalMs: 1800000,
   },
 ];

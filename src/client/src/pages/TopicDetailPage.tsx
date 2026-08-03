@@ -2,8 +2,13 @@ import { useParams, Link } from 'react-router';
 import { useApi } from '../hooks/useApi.js';
 import { TopicDetailChart } from '../components/TopicDetailChart.js';
 
-interface HP { heatIndex: number; growthRate: number | null; recordedAt: string; }
-interface TD { id: number; title: string; url: string | null; heatIndex: number; velocityScore: number | null; growthRate: number | null; peakHeat: number; mentionCount: number; sourceRank: number | null; aiVerified: number; aiSummary: string | null; aiCategory: string | null; firstSeenAt: string; lastSeenAt: string; source?: { name: string; slug: string }; history: HP[]; }
+interface HP { heatIndex: number; heatScore: number | null; growthRate: number | null; recordedAt: string; }
+interface TD { id: number; title: string; url: string | null; heatIndex: number; heatScore: number | null; velocityScore: number | null; growthRate: number | null; peakHeat: number; mentionCount: number; sourceRank: number | null; aiVerified: number; aiSummary: string | null; aiCategory: string | null; matchedKeyword: string | null; firstSeenAt: string; lastSeenAt: string; source?: { name: string; slug: string }; history: HP[]; }
+
+function formatHeat(score: number): string {
+  if (score >= 10000) return (score / 10000).toFixed(1) + '万';
+  return score.toLocaleString();
+}
 
 export function TopicDetailPage() {
   const { id } = useParams();
@@ -24,14 +29,13 @@ export function TopicDetailPage() {
           <div className="flex-1">
             <h1 className="text-xl font-heading font-extrabold text-text-primary mb-3">{t.title}</h1>
             <div className="flex flex-wrap items-center gap-2 mb-3">
-              {t.aiCategory && <span className="text-[11px] px-2.5 py-1 rounded-lg bg-brand-soft text-brand font-mono font-medium">{t.aiCategory}</span>}
-              {t.aiVerified === 1 && <span className="text-[11px] px-2.5 py-1 rounded-lg bg-positive-soft text-positive font-mono font-medium">AI 已验证</span>}
+              {t.matchedKeyword && <span className="text-[11px] px-2.5 py-1 rounded-lg bg-brand-soft text-brand font-mono font-medium">#{t.matchedKeyword}</span>}
               {t.source && <span className="text-[11px] text-text-muted font-mono">{t.source.name}</span>}
             </div>
-            {t.aiSummary && <p className="text-[14px] text-text-secondary leading-relaxed">{t.aiSummary}</p>}
           </div>
           <div className="flex gap-3">
-            <StatPill value={t.heatIndex.toFixed(0)} label="热度" />
+            <StatPill value={t.heatScore != null ? formatHeat(t.heatScore) : '—'} label="热度值" />
+            <StatPill value={t.heatIndex.toFixed(0)} label="热力值" />
             {t.velocityScore != null && <StatPill value={t.velocityScore.toFixed(0)} label="增速" color="warning" />}
           </div>
         </div>
@@ -40,7 +44,7 @@ export function TopicDetailPage() {
       <TopicDetailChart history={t.history || []} />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Meta label="峰值热度" value={t.peakHeat.toFixed(0)} />
+        <Meta label="峰值热力值" value={t.peakHeat.toFixed(0)} />
         <Meta label="提及次数" value={String(t.mentionCount)} />
         <Meta label="来源排名" value={t.sourceRank?.toString() || '—'} />
         <Meta label="首次发现" value={new Date(t.firstSeenAt).toLocaleDateString('zh-CN')} />

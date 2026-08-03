@@ -10,7 +10,7 @@ import { sourcesRouter } from './routes/sources.js';
 import { settingsRouter } from './routes/settings.js';
 import { statsRouter } from './routes/stats.js';
 import { agentRouter } from './routes/agent.js';
-import { startScheduler, crawlAllSources } from './crawlers/scheduler.js';
+import { startScheduler, triggerCrawl } from './crawlers/scheduler.js';
 
 const PORT = parseInt(process.env.PORT || '3456');
 
@@ -38,8 +38,9 @@ app.get('/api/health', (_req, res) => {
 // ── Manual crawl trigger ──
 app.post('/api/v1/crawl/trigger', async (_req, res) => {
   try {
-    const count = await crawlAllSources();
-    res.json({ success: true, topicsFound: count });
+    const result = await triggerCrawl();
+    if (!result.ok) return res.status(409).json({ error: result.error });
+    res.json({ success: true, topicsFound: result.count });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

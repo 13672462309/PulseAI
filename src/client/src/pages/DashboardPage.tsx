@@ -20,13 +20,13 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Spotlight Hero */}
-      <div className="spotlight rounded-2xl bg-surface-card/50 border border-border p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="spotlight rounded-2xl bg-surface-card/60 border border-brand/20 p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">
             <span className="text-text-primary">实时热点</span>
             <span className="text-brand"> 监控雷达</span>
           </h1>
-          <p className="text-text-muted text-sm mt-2 max-w-md">
+          <p className="text-text-secondary text-sm mt-2 max-w-md leading-relaxed">
             AI 驱动的关键词热点追踪 · 多源交叉验证 · 增速监控 · 抢先一步发现趋势
           </p>
         </div>

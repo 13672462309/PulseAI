@@ -1,5 +1,5 @@
 import got from 'got';
-import { randomUA } from './utils.js';
+import { calcHeatScore, randomUA } from './utils.js';
 
 interface WeiboItem {
   realpos: number;
@@ -15,7 +15,7 @@ interface WeiboResponse {
   };
 }
 
-export async function crawlWeibo(): Promise<Array<{ title: string; url: string; rank: number; heatIndex: number; rawHeat: number | null }>> {
+export async function crawlWeibo(): Promise<Array<{ title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null }>> {
   try {
     const resp = await got('https://weibo.com/ajax/side/hotSearch', {
       headers: {
@@ -30,13 +30,17 @@ export async function crawlWeibo(): Promise<Array<{ title: string; url: string; 
     const items = resp?.data?.realtime || [];
     const maxHeat = Math.max(...items.map(i => i.raw_hot || 0), 1);
 
-    return items.slice(0, 30).map((item, i) => ({
-      title: item.word || '',
-      url: item.word_scheme ? `https://s.weibo.com/weibo?q=${encodeURIComponent(item.word_scheme)}` : '', // Note: typo in API
-      rank: item.realpos || i + 1,
-      heatIndex: Math.round(((item.raw_hot || 0) / maxHeat) * 100),
-      rawHeat: item.raw_hot || null,
-    })).filter(t => t.title);
+    return items.slice(0, 30).map((item, i) => {
+      const rawHeat = item.raw_hot || 0;
+      return {
+        title: item.word || '',
+        url: item.word_scheme ? `https://s.weibo.com/weibo?q=${encodeURIComponent(item.word_scheme)}` : '', // Note: typo in API
+        rank: item.realpos || i + 1,
+        heatIndex: Math.round((rawHeat / maxHeat) * 100),
+        heatScore: rawHeat ? calcHeatScore(rawHeat) : null,
+        rawHeat: rawHeat || null,
+      };
+    }).filter(t => t.title);
   } catch (err) {
     console.error('[Weibo] Crawl error:', err);
     return [];
