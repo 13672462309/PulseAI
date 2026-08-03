@@ -55,6 +55,7 @@ model Topic {
   growthRate      Float?
   velocityScore   Float?
   aiVerified      Int      @default(0)
+  isRumor         Boolean? // derived from verify classification (rumor_unverified); null = not verified
   aiSummary       String?
   aiCategory      String?
   tier            String?   // "burst" | "hot" | "rising" | null (not keyword-relevant)

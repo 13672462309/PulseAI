@@ -6,17 +6,26 @@
 const TITLE_BLOCKLIST = [
   // encyclopedia / dictionary
   '百科', '词典', '英汉词典', '单词',
-  // generic-knowledge questions
-  '是什么', '是什么意思', '什么意思',
+  // generic-knowledge questions ("什么是半导体", "什么叫半导体")
+  '是什么', '是什么意思', '什么意思', '什么是', '什么叫',
   // official sites / downloads
-  '官网', '官方网站', '免费下载', '安全下载', '下载站',
-  // app-download style titles ("下载DeepSeek App_...")
-  'App_',
+  '官网', '官方网站', '官方下载', '免费下载', '安全下载', '下载站',
+  // app-download style titles ("下载DeepSeek App_...", "Download Claude | ...")
+  'App_', 'Download',
   // tutorials / how-to content
   '保姆级', '教程', '速通', '教学', '手把手', '从零开始', '零基础', '免费使用',
+  // how-to guides / mirror sites ("Claude 新手指南", "国内使用指南", "镜像站")
+  '指南', '镜像站',
   // video-site / portal channel pages ("爱奇艺-电影频道", "豆瓣电影", "免费电影在线观看")
   '在线观看', '在线播放', '电影频道', '影视大全', '电影大全', '高清电影', '免费电影',
   '电影网', '影院热映', '热映电影', '豆瓣', '哔哩哔哩',
+  // portal homepages / channel pages ("半导体新闻资讯-全球半导体观察", "娱乐看猫眼")
+  '新闻资讯', '最新资讯', '新闻快讯', '全球半导体观察', '娱乐看猫眼',
+];
+
+// Regex patterns: "下载" outside of the "下载量" context is a download-site signal
+const TITLE_PATTERNS: RegExp[] = [
+  /下载(?!量)/,
 ];
 
 // Brand-page title pattern: "DeepSeek | 深度求索", "Claude | Anthropic" —
@@ -30,20 +39,30 @@ const URL_BLOCKLIST = [
   'baike.sogou.com',
   'dictionary.cambridge.org',
   'imdb.com',
+  'dramx.com',             // semiconductor news portal (no deep content)
+  '163.com/dy/media',      // netease media-account homepages
 ];
 
 /**
  * Brand–domain homepage detection: e.g. "DeepSeek | 深度求索" with url deepseek.com.
- * Only fires for root/short paths (a real homepage), so article/video pages are safe.
+ * Fires for homepage-like paths AND low-value official pages (download/docs/locale
+ * pages) — e.g. "Download Claude | Claude by Anthropic" on claude.com/download.
+ * News/blog paths (/news, /blog, /press) are kept — official news has investment value.
  */
 function isBrandHomepage(title: string, url: string): boolean {
   if (!url) return false;
   try {
     const parsed = new URL(url);
-    // Only homepage-like paths (root or very short)
-    const path = parsed.pathname;
-    if (path && path !== '/' && path.length > 1) return false;
     if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+
+    // Path filter: homepage + download/docs/locale pages are low value;
+    // news/blog/press pages are kept
+    const path = (parsed.pathname || '').toLowerCase();
+    if (path && path !== '/') {
+      const lowValuePath = ['/download', '/downloads', '/docs', '/zh', '/zh-cn', '/app', '/apps', '/profile'];
+      const isLowValuePath = lowValuePath.some(x => path === x || path.startsWith(x + '/'));
+      if (!isLowValuePath) return false;
+    }
 
     const host = parsed.hostname.toLowerCase().replace(/^(www|m|mobile)\./, '');
     // Extract the primary domain word, skipping TLDs and two-part suffixes (.com.cn, .co.uk…)
@@ -65,6 +84,9 @@ export function isLowValueContent(title: string, url: string): boolean {
 
   for (const pattern of TITLE_BLOCKLIST) {
     if (t.includes(pattern)) return true;
+  }
+  for (const pattern of TITLE_PATTERNS) {
+    if (pattern.test(t)) return true;
   }
 
   // Short "A | B" brand-page titles ("DeepSeek | 深度求索")

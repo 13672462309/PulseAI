@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useApi } from '../hooks/useApi.js';
 
-interface T { id: number; title: string; heatIndex: number; heatScore: number | null; velocityScore: number | null; aiCategory: string | null; matchedKeyword: string | null; aiVerified: number; firstSeenAt: string; mentionCount: number; source?: { name?: string }; }
+interface T { id: number; title: string; heatIndex: number; heatScore: number | null; velocityScore: number | null; aiCategory: string | null; matchedKeyword: string | null; isRumor: boolean | null; aiVerified: number; firstSeenAt: string; mentionCount: number; source?: { name?: string }; }
 
 function formatHeat(score: number): string {
   if (score >= 10000) return (score / 10000).toFixed(1) + '万';
@@ -39,6 +39,8 @@ export function TopicsPage() {
               <p className="text-[14px] font-medium text-text-primary truncate group-hover:text-brand transition-colors">{t.title}</p>
               <div className="flex items-center gap-2 mt-1.5">
                 {t.matchedKeyword && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-brand-soft text-brand font-mono font-medium">#{t.matchedKeyword}</span>}
+                {t.isRumor === true && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-danger/10 text-danger font-mono font-semibold">⚠️ 疑似谣言</span>}
+                {t.isRumor === false && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-positive/10 text-positive font-mono">√ 不是谣言</span>}
                 <span className="text-[10px] text-text-muted">{t.source?.name}</span>
                 <span className="text-[10px] font-mono font-semibold text-positive">{(t.velocityScore ?? 0) > 0 ? '+' : ''}{(t.velocityScore ?? 0).toFixed(0)}</span>
               </div>

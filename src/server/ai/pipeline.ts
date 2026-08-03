@@ -245,6 +245,96 @@ export async function classifyTiers(): Promise<void> {
 
 const BATCH_SIZE = 12; // smaller batches: DeepSeek generates long JSON — 25-title batches hang
 
+// Should this topic get a verify (marketing/rumor detection) call?
+// Only topics that can make a tier (hot/burst via heat ≥ 80, or rising via
+// predicted velocity ≥ threshold) are worth verifying — low-heat slow topics skip it.
+function needsVerify(t: { heatIndex: number; heatScore: number | null; growthRate: number | null }): boolean {
+  if (t.heatIndex >= HEAT_THRESHOLD) return true;
+  const predictedVel = (t.growthRate ?? 0) * Math.sqrt((t.heatScore ?? 0) + 1) / 10;
+  return predictedVel >= RISING_THRESHOLD;
+}
+
+async function processChunk(
+  chunk: Awaited<ReturnType<typeof prisma.topic.findMany>>[number][],
+  batchNo: number,
+  totalBatches: number,
+): Promise<{ kept: number; discarded: number; retried: number }> {
+  const batchStart = Date.now();
+  console.log(`[AI Pipeline] Batch ${batchNo}/${totalBatches} start ${new Date().toISOString().slice(11, 19)}...`);
+  const relevances = await checkKeywordRelevanceBatch(chunk.map(t => t.title));
+
+  let kept = 0, discarded = 0, retried = 0;
+
+  // Stage 2: verify only topics that can enter a tier, in one batch AI call
+  const keptIdx: number[] = [];
+  for (let j = 0; j < chunk.length; j++) {
+    const relevance = relevances[j];
+    if (relevance === null) {
+      retried++; // AI failed for this title — keep for next round, never delete on uncertainty
+    } else if (!relevance.relevant) {
+      // deleteMany: tolerant of concurrent deletion (P2025) — alerts cascade now
+      await prisma.topic.deleteMany({ where: { id: chunk[j].id } });
+      discarded++;
+    } else {
+      keptIdx.push(j);
+    }
+  }
+  const verifyIdx = keptIdx.filter(j => needsVerify(chunk[j]));
+  const verifies = verifyIdx.length
+    ? await verifyTopicsBatch(verifyIdx.map(j => chunk[j].title))
+    : [];
+  const verifyMap = new Map(verifyIdx.map((j, k) => [j, verifies[k]]));
+
+  for (const j of keptIdx) {
+    const t = chunk[j];
+    const relevance = relevances[j]!;
+    const verify = verifyMap.get(j) ?? null;
+
+    const aiVerified = verify?.classification === 'verified_real' ? 1 : 2;
+    const isRumor = verify ? verify.classification === 'rumor_unverified' : null;
+    const category = relevance.matchedKeyword || '综合';
+    const summary = relevance.matchedKeyword
+      ? `${relevance.matchedKeyword}相关话题，热度 ${t.heatIndex.toFixed(0)}`
+      : null;
+
+    // tier = hot if heat >= HEAT_THRESHOLD, otherwise null (shown in topics but not dashboard)
+    const tier: string | null = t.heatIndex >= HEAT_THRESHOLD ? 'hot' : null;
+
+    await prisma.topic.update({
+      where: { id: t.id },
+      data: {
+        aiVerified,
+        isRumor,
+        aiSummary: summary,
+        aiCategory: category,
+        matchedKeyword: relevance.matchedKeyword,
+        tier,
+      },
+    });
+
+    kept++;
+
+    // Broadcast
+    broadcastNewTopic({
+      id: t.id, title: t.title, normalizedTitle: t.normalizedTitle,
+      sourceId: t.sourceId, sourceRank: t.sourceRank, url: t.url,
+      heatIndex: t.heatIndex, rawHeat: t.rawHeat, growthRate: t.growthRate,
+      velocityScore: t.velocityScore, aiVerified, aiSummary: summary,
+      aiCategory: category, tier, matchedKeyword: relevance.matchedKeyword,
+      firstSeenAt: t.firstSeenAt.toISOString(), lastSeenAt: t.lastSeenAt.toISOString(),
+      peakHeat: t.peakHeat, mentionCount: t.mentionCount,
+    });
+
+    // Alert for new hot topic
+    if (tier === 'hot' && verify?.isActionable) {
+      await createAlert(t.id, null, 'new_hot', 'warning', `🔥 新热点: "${t.title}" — ${summary ?? '热度上升'}`);
+    }
+  }
+
+  console.log(`[AI Pipeline] Batch ${batchNo}/${totalBatches} done in ${((Date.now() - batchStart) / 1000).toFixed(1)}s (kept ${kept}, discarded ${discarded}, retried ${retried})`);
+  return { kept, discarded, retried };
+}
+
 export async function runAiPipeline(): Promise<{ kept: number; discarded: number }> {
   console.log('[AI Pipeline] Starting keyword-driven pipeline...');
 
@@ -261,79 +351,20 @@ export async function runAiPipeline(): Promise<{ kept: number; discarded: number
 
   let kept = 0, discarded = 0, retried = 0;
 
-  // Stage 1: Batch keyword relevance (GATE) — one AI call per BATCH_SIZE titles
+  // Stage 1+2: keyword relevance (GATE) with verify, processed 2 batches concurrently.
+  // Concurrency halves the AI latency wall-clock; batches are independent.
   const totalBatches = Math.ceil(rawTopics.length / BATCH_SIZE);
-  for (let i = 0; i < rawTopics.length; i += BATCH_SIZE) {
+  for (let i = 0; i < rawTopics.length; i += BATCH_SIZE * 2) {
     const batchNo = i / BATCH_SIZE + 1;
-    const batchStart = Date.now();
-    console.log(`[AI Pipeline] Batch ${batchNo}/${totalBatches} start ${new Date().toISOString().slice(11, 19)}...`);
-    const chunk = rawTopics.slice(i, i + BATCH_SIZE);
-    const relevances = await checkKeywordRelevanceBatch(chunk.map(t => t.title));
-
-    // Stage 2: verify only the relevant ones, in one batch AI call
-    const keptIdx: number[] = [];
-    for (let j = 0; j < chunk.length; j++) {
-      const relevance = relevances[j];
-      if (relevance === null) {
-        retried++; // AI failed for this title — keep for next round, never delete on uncertainty
-      } else if (!relevance.relevant) {
-        // deleteMany: tolerant of concurrent deletion (P2025) — alerts cascade now
-        await prisma.topic.deleteMany({ where: { id: chunk[j].id } });
-        discarded++;
-      } else {
-        keptIdx.push(j);
-      }
-    }
-    const verifies = keptIdx.length
-      ? await verifyTopicsBatch(keptIdx.map(j => chunk[j].title))
-      : [];
-
-    for (let k = 0; k < keptIdx.length; k++) {
-      const j = keptIdx[k];
-      const t = chunk[j];
-      const relevance = relevances[j]!;
-      const verify = verifies[k];
-
-      const aiVerified = verify?.classification === 'verified_real' ? 1 : 2;
-      const category = relevance.matchedKeyword || '综合';
-      const summary = relevance.matchedKeyword
-        ? `${relevance.matchedKeyword}相关话题，热度 ${t.heatIndex.toFixed(0)}`
-        : null;
-
-      // tier = hot if heat >= HEAT_THRESHOLD, otherwise null (shown in topics but not dashboard)
-      const tier: string | null = t.heatIndex >= HEAT_THRESHOLD ? 'hot' : null;
-
-      await prisma.topic.update({
-        where: { id: t.id },
-        data: {
-          aiVerified,
-          aiSummary: summary,
-          aiCategory: category,
-          matchedKeyword: relevance.matchedKeyword,
-          tier,
-        },
-      });
-
-      kept++;
-
-      // Broadcast
-      broadcastNewTopic({
-        id: t.id, title: t.title, normalizedTitle: t.normalizedTitle,
-        sourceId: t.sourceId, sourceRank: t.sourceRank, url: t.url,
-        heatIndex: t.heatIndex, rawHeat: t.rawHeat, growthRate: t.growthRate,
-        velocityScore: t.velocityScore, aiVerified, aiSummary: summary,
-        aiCategory: category, tier, matchedKeyword: relevance.matchedKeyword,
-        firstSeenAt: t.firstSeenAt.toISOString(), lastSeenAt: t.lastSeenAt.toISOString(),
-        peakHeat: t.peakHeat, mentionCount: t.mentionCount,
-      });
-
-      // Alert for new hot topic
-      if (tier === 'hot' && verify?.isActionable) {
-        await createAlert(t.id, null, 'new_hot', 'warning', `🔥 新热点: "${t.title}" — ${verify.summary}`);
-      }
-    }
-
-    console.log(`[AI Pipeline] Batch ${batchNo}/${totalBatches} done in ${((Date.now() - batchStart) / 1000).toFixed(1)}s (kept ${kept}, discarded ${discarded}, retried ${retried})`);
+    const chunkA = rawTopics.slice(i, i + BATCH_SIZE);
+    const chunkB = rawTopics.slice(i + BATCH_SIZE, i + BATCH_SIZE * 2);
+    const [resA, resB] = await Promise.all([
+      processChunk(chunkA, batchNo, totalBatches),
+      chunkB.length ? processChunk(chunkB, batchNo + 1, totalBatches) : Promise.resolve({ kept: 0, discarded: 0, retried: 0 }),
+    ]);
+    kept += resA.kept + resB.kept;
+    discarded += resA.discarded + resB.discarded;
+    retried += resA.retried + resB.retried;
   }
 
   console.log('[AI Pipeline] Batch relevance done, classifying tiers...');

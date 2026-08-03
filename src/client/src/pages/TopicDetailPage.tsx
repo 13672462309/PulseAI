@@ -3,7 +3,7 @@ import { useApi } from '../hooks/useApi.js';
 import { TopicDetailChart } from '../components/TopicDetailChart.js';
 
 interface HP { heatIndex: number; heatScore: number | null; growthRate: number | null; recordedAt: string; }
-interface TD { id: number; title: string; url: string | null; heatIndex: number; heatScore: number | null; velocityScore: number | null; growthRate: number | null; peakHeat: number; mentionCount: number; sourceRank: number | null; aiVerified: number; aiSummary: string | null; aiCategory: string | null; matchedKeyword: string | null; firstSeenAt: string; lastSeenAt: string; source?: { name: string; slug: string }; history: HP[]; }
+interface TD { id: number; title: string; url: string | null; heatIndex: number; heatScore: number | null; velocityScore: number | null; growthRate: number | null; peakHeat: number; mentionCount: number; sourceRank: number | null; aiVerified: number; isRumor: boolean | null; aiSummary: string | null; aiCategory: string | null; matchedKeyword: string | null; firstSeenAt: string; lastSeenAt: string; source?: { name: string; slug: string }; history: HP[]; }
 
 function formatHeat(score: number): string {
   if (score >= 10000) return (score / 10000).toFixed(1) + '万';
@@ -30,6 +30,8 @@ export function TopicDetailPage() {
             <h1 className="text-xl font-heading font-extrabold text-text-primary mb-3">{t.title}</h1>
             <div className="flex flex-wrap items-center gap-2 mb-3">
               {t.matchedKeyword && <span className="text-[11px] px-2.5 py-1 rounded-lg bg-brand-soft text-brand font-mono font-medium">#{t.matchedKeyword}</span>}
+              {t.isRumor === true && <span className="text-[11px] px-2.5 py-1 rounded-lg bg-danger/10 text-danger font-mono font-semibold">⚠️ 疑似谣言</span>}
+              {t.isRumor === false && <span className="text-[11px] px-2.5 py-1 rounded-lg bg-positive/10 text-positive font-mono">√ 不是谣言</span>}
               {t.source && <span className="text-[11px] text-text-muted font-mono">{t.source.name}</span>}
             </div>
           </div>
