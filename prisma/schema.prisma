@@ -1,0 +1,126 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:../data/hotmonitor.db"
+}
+
+// ── 监控关键词 ──
+model Keyword {
+  id              Int      @id @default(autoincrement())
+  keyword         String   @unique
+  category        String   @default("custom")
+  isActive        Boolean  @default(true)
+  priority        Int      @default(0)
+  growthThreshold Float    @default(0.15)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  alerts          Alert[]
+}
+
+// ── 数据源 ──
+model Source {
+  id              Int      @id @default(autoincrement())
+  slug            String   @unique
+  name            String
+  url             String
+  accessType      String   @default("scrape")
+  isActive        Boolean  @default(true)
+  status          String   @default("ok")
+  cooldownUntil   DateTime?
+  lastFetchedAt   DateTime?
+  fetchIntervalMs Int      @default(1800000)
+  createdAt       DateTime @default(now())
+
+  topics          Topic[]
+  crawlLogs       CrawlLog[]
+}
+
+// ── 话题 ──
+model Topic {
+  id              Int      @id @default(autoincrement())
+  title           String
+  normalizedTitle String
+  sourceId        Int
+  sourceRank      Int?
+  url             String?
+  heatIndex       Float    @default(0)
+  rawHeat         Float?
+  growthRate      Float?
+  velocityScore   Float?
+  aiVerified      Int      @default(0)
+  aiSummary       String?
+  aiCategory      String?
+  tier            String?   // "burst" | "hot" | "rising" | null (not keyword-relevant)
+  matchedKeyword  String?   // which keyword this topic matched
+  firstSeenAt     DateTime
+  lastSeenAt      DateTime
+  peakHeat        Float    @default(0)
+  mentionCount    Int      @default(1)
+
+  source          Source   @relation(fields: [sourceId], references: [id])
+  history         TopicHistory[]
+  alerts          Alert[]
+
+  @@index([normalizedTitle])
+  @@index([firstSeenAt])
+  @@index([sourceId])
+  @@index([velocityScore])
+}
+
+// ── 话题历史（时间序列） ──
+model TopicHistory {
+  id         Int      @id @default(autoincrement())
+  topicId    Int
+  heatIndex  Float
+  sourceRank Int?
+  growthRate Float?
+  recordedAt DateTime @default(now())
+
+  topic      Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@index([topicId, recordedAt])
+}
+
+// ── 告警 ──
+model Alert {
+  id        Int      @id @default(autoincrement())
+  topicId   Int
+  keywordId Int?
+  alertType String
+  severity  String   @default("info")
+  message   String
+  isRead    Boolean  @default(false)
+  isSent    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  topic     Topic    @relation(fields: [topicId], references: [id])
+  keyword   Keyword? @relation(fields: [keywordId], references: [id])
+
+  @@index([isRead, createdAt])
+}
+
+// ── 系统设置 ──
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+// ── 爬取日志 ──
+model CrawlLog {
+  id           Int      @id @default(autoincrement())
+  sourceId     Int
+  status       String
+  topicsFound  Int      @default(0)
+  durationMs   Int?
+  errorMessage String?
+  createdAt    DateTime @default(now())
+
+  source       Source   @relation(fields: [sourceId], references: [id])
+
+  @@index([sourceId, createdAt])
+}

@@ -1,0 +1,139 @@
+openapi: "3.0.3"
+info:
+  title: HotMonitor Agent Skill
+  description: |
+    热点监控工具 - AI-powered hot topic monitoring and early warning system.
+    Query trending topics, monitor keywords, and receive hot topic alerts.
+    Supports Chinese and international data sources.
+  version: "1.0.0"
+  contact:
+    name: HotMonitor
+servers:
+  - url: http://localhost:3456/api/v1
+    description: Local HotMonitor instance
+
+paths:
+  /agent/search:
+    get:
+      summary: Search for hot topics
+      description: Search current hot topics by keyword or natural language query.
+      operationId: searchTopics
+      parameters:
+        - name: query
+          in: query
+          required: true
+          description: Keyword or natural language query (e.g., "AI大模型", "半导体最新动态")
+          schema:
+            type: string
+        - name: sort
+          in: query
+          description: Sort order
+          schema:
+            type: string
+            enum: [velocity, heat, newest]
+            default: velocity
+        - name: limit
+          in: query
+          description: Max results
+          schema:
+            type: integer
+            default: 10
+            maximum: 50
+      responses:
+        '200':
+          description: Matching topics with AI summaries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  topics:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TopicSummary'
+                  query:
+                    type: string
+                  total:
+                    type: integer
+
+  /agent/trending:
+    get:
+      summary: Get trending/potential breakout topics
+      description: |
+        Returns topics sorted by velocity score (growth potential).
+        These are topics that are "becoming hot" rather than already at peak.
+      operationId: getTrending
+      parameters:
+        - name: category
+          in: query
+          description: Filter by category
+          schema:
+            type: string
+            enum: [科技, 财经, 娱乐, 社会, 体育, 国际, 教育, 健康]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Trending topics with velocity scores
+
+  /agent/monitor:
+    post:
+      summary: Start monitoring a keyword
+      description: Add a keyword to the monitoring list. Alerts fire when hot topics match.
+      operationId: addKeyword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [keyword]
+              properties:
+                keyword:
+                  type: string
+                  description: Keyword to monitor
+                category:
+                  type: string
+                  description: Optional category
+      responses:
+        '201':
+          description: Keyword added to monitoring
+
+  /agent/status:
+    get:
+      summary: System status
+      description: Returns monitoring status, source health, and recent alert stats.
+      operationId: getStatus
+      responses:
+        '200':
+          description: System health summary
+
+components:
+  schemas:
+    TopicSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        sourceName:
+          type: string
+        heatIndex:
+          type: number
+        velocityScore:
+          type: number
+        growthRate:
+          type: number
+        aiVerified:
+          type: integer
+        aiSummary:
+          type: string
+        aiCategory:
+          type: string
+        firstSeenAt:
+          type: string
+          format: date-time
