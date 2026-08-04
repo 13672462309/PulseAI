@@ -1,14 +1,16 @@
 # ⚡ HotMonitor — AI 热点监控指挥中心
 
-> 轻量级 AI 驱动热点监控工具，让投资者走在热点第一线
+> 关键词驱动的 AI 热点监控工具，为投资者发现对炒股有实际意义的新兴热门话题
 
 ## 功能
 
-- 🎯 **关键词监控** — 设定关键词（如"AI大模型"、"半导体"），AI 甄别真假后实时通知
-- 🔥 **自动热点发现** — 每 30 分钟从 9 个数据源自动聚合热点
-- 📈 **潜力热点追踪** — 基于增速评分（velocity_score）发现"正在变热"的话题
-- 🤖 **AI 内容验证** — OpenRouter 多模型分级，识别营销号/谣言/标题党
-- 🎨 **赛博朋克 UI** — 指挥中心风格，矩阵绿配色，响应式适配
+- 🎯 **关键词监控** — 设定关键词（如"AI大模型"、"半导体"），AI 语义判定相关性，只保留相关内容
+- 🚫 **低价值内容过滤** — 规则黑名单自动拦截百科/词典/官网首页/教程/下载站/门户频道（"半导体是什么?_知乎"、"DeepSeek | 深度求索"不入库）
+- 🔥 **双热度体系** — 热力值（0-100 相对分）+ 热度值（无界绝对热度，√压缩/代理源×15），24h 半衰期衰减
+- 📈 **潜力话题追踪** — 热度值增速（当前−初始）发现"正在变热"的话题，三级分类（🚀爆发/🔥热点/📈潜力）每轮重算可降级
+- 🤖 **AI 内容验证** — 批量判定（12条/批 × 并发2路）+ 营销/谣言识别，入榜话题显示 ⚠️疑似谣言/√不是谣言
+- 🌐 **8 数据源** — 微博/百度/B站（双通道）/36氪/搜狗（双通道）/Bing/Hacker News/通用搜索
+- 🎨 **赛博朋克 UI** — 指挥中心风格，KPI 可点击跳转筛选，热度趋势图
 - 🔌 **Agent Skill** — 可被其他 AI 调用查询热点
 
 ## 快速开始
@@ -31,29 +33,33 @@ npm run dev
 
 访问 http://localhost:5173 查看仪表盘。
 
+> 提示：`npm run dev` 使用 `tsx watch < NUL` 解决 Windows 下 concurrently 无终端导致后端挂起的问题。若仍有异常，可分开两个终端运行 `npm run dev:server` 与 `npm run dev:client`。
+
 ## 数据源
 
-| 来源 | 类型 | 频率 |
-|------|------|------|
-| 微博热搜 | API | 30 min |
-| 知乎热榜 | 爬虫 | 30 min |
-| 百度热搜 | 爬虫 | 30 min |
-| 今日头条 | 爬虫 | 30 min |
-| B站热门 | API | 30 min |
-| 36氪快讯 | RSS | 30 min |
-| GitHub Trending | 爬虫 | 30 min |
-| Twitter (X) | API | 30 min |
-| 网络搜索 | 爬虫 | 30 min |
+| 来源 | 通道 | 热度值 |
+|------|------|--------|
+| 微博热搜 | 热榜 API | 热搜指数（真实） |
+| 百度热搜 | 热榜爬虫 | 搜索指数（真实） |
+| B站 | 热榜 + 关键词搜索 | 播放/互动加权（真实） |
+| 36氪快讯 | API + RSS | 代理源（热力值×15） |
+| 搜狗 | 热词榜 + 关键词搜索 | 代理源（热力值×15） |
+| Bing 搜索 | 全关键词搜索 | 代理源（热力值×15） |
+| 通用网页搜索 | 全关键词搜索 | 代理源（热力值×15） |
+| Hacker News | hn.algolia.com | points+评论（真实） |
+
+每 30 分钟自动采集一轮；仪表盘可手动「立即扫描」触发。
 
 ## 技术栈
 
 | 层 | 技术 |
 |----|------|
-| 前端 | React 18 + Vite + Tailwind CSS v4 + Recharts + GSAP |
+| 前端 | React 18 + Vite 6 + Tailwind CSS v4 + Recharts + GSAP |
 | 后端 | Express.js 5 + TypeScript |
 | 数据库 | Prisma 5 + SQLite (WAL) |
 | 实时通信 | Socket.io 4 |
-| AI | OpenRouter (Gemini Flash + Claude Sonnet) |
+| 爬虫 | got + cheerio |
+| AI | OpenRouter（deepseek-v4-flash，批量+并发+超时保护） |
 | 通知 | Web Push API + Nodemailer |
 
 ## 项目结构
@@ -62,40 +68,37 @@ npm run dev
 ai-hotmonitor/
 ├── src/
 │   ├── server/          # Express 后端
-│   │   ├── crawlers/    # 爬虫引擎（9个源 + 调度器）
-│   │   ├── ai/          # OpenRouter AI 管线
+│   │   ├── crawlers/    # 8 源爬虫 + 调度器 + 内容过滤 + 关键词搜索词
+│   │   ├── ai/          # OpenRouter 管线（批量相关性→验证→定级）
 │   │   ├── routes/      # REST API 端点
 │   │   └── notifications/ # Web Push + Email
 │   ├── client/          # React 前端
 │   │   └── src/
-│   │       ├── pages/   # 7 个页面
-│   │       ├── components/ # 8 个组件
+│   │       ├── pages/   # 仪表盘/话题/详情/关键词/源/设置
+│   │       ├── components/ # KpiRow / VelocityGrid / TopicDetailChart
 │   │       └── hooks/   # useApi, useSocket
 │   └── shared/          # 共享类型定义
 ├── agent-skill/         # Agent Skill 封装
-├── prisma/              # 数据库 Schema + 迁移
-├── REQUIREMENTS.md      # 需求文档
-└── DESIGN.md            # 架构设计文档
+├── prisma/              # Schema + 6 个迁移
+├── REQUIREMENTS.md      # 需求文档（v3）
+└── DESIGN.md            # 架构设计文档（v3）
 ```
 
 ## API 端点
 
 ```
-GET/POST    /api/v1/keywords          # 关键词管理
-GET         /api/v1/topics            # 话题列表（分页/筛选/排序）
-GET         /api/v1/topics/trending   # 潜力热点（增速排序）
-GET         /api/v1/topics/hot        # 热度榜单
-GET         /api/v1/topics/:id        # 话题详情 + 时间序列
+GET/POST    /api/v1/keywords          # 关键词管理（新词自动生成英文搜索词）
+GET         /api/v1/topics            # 话题列表（分页/筛选/排序，默认热度值）
+GET         /api/v1/topics/hot        # 热度榜（热度值降序）
+GET         /api/v1/topics/trending   # 增速榜
+GET         /api/v1/topics/:id        # 话题详情 + 热度趋势
 GET/POST    /api/v1/alerts            # 告警管理
 GET         /api/v1/sources           # 数据源健康
-GET         /api/v1/stats             # 仪表盘统计
-GET         /api/v1/stats/velocity    # 增速 Top 20
-POST        /api/v1/crawl/trigger     # 手动触发爬取
+GET         /api/v1/stats             # 仪表盘统计（KPI）
+GET         /api/v1/stats/velocity    # 增速 Top
+POST        /api/v1/crawl/trigger     # 手动触发（进行中返回 409）
 GET/PUT     /api/v1/settings          # 系统设置
-GET         /api/v1/agent/search      # Agent: 自然语言搜索
-GET         /api/v1/agent/trending    # Agent: 潜力热点
-POST        /api/v1/agent/monitor     # Agent: 添加监控
-GET         /api/v1/agent/status      # Agent: 系统状态
+GET         /api/v1/agent/*           # Agent 端点
 ```
 
 ## Agent Skill 使用
