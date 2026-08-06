@@ -9,12 +9,14 @@
   /* Text */
   --color-text-primary: #F1F5F9;
   --color-text-secondary: #94A3B8;
-  --color-text-muted: #64748B;
+  --color-text-muted: #8494A8;
 
   /* Brand — Developer Green */
   --color-brand: #22C55E;
   --color-brand-soft: rgba(34, 197, 94, 0.10);
   --color-brand-glow: rgba(34, 197, 94, 0.18);
+  --color-brand-cyan: #22D3EE;
+  --color-brand-cyan-soft: rgba(34, 211, 238, 0.10);
 
   /* Semantic */
   --color-positive: #16A34A;
@@ -29,14 +31,14 @@
   --color-border-hover: rgba(255, 255, 255, 0.14);
 
   /* Typography */
-  --font-heading: 'Inter', sans-serif;
+  --font-heading: 'Space Grotesk', 'Inter', sans-serif;
   --font-body: 'Inter', sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
   /* Radius */
-  --radius-lg: 14px;
-  --radius-md: 10px;
-  --radius-sm: 6px;
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
 }
 
 /* ── Reset ── */
@@ -44,7 +46,11 @@
 html, body, #root { height: 100%; }
 
 body {
-  background: var(--color-surface-root);
+  background:
+    radial-gradient(1100px 520px at 85% -10%, rgba(34, 211, 238, 0.07), transparent 60%),
+    radial-gradient(900px 480px at -10% 0%, rgba(34, 197, 94, 0.08), transparent 55%),
+    linear-gradient(180deg, #0B0F19 0%, #070B14 100%);
+  background-attachment: fixed;
   color: var(--color-text-primary);
   font-family: var(--font-body);
   font-size: 14px;
@@ -61,14 +67,79 @@ body {
 
 /* ── Card ── */
 .card {
-  background: var(--color-surface-card);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.028), transparent 42%), var(--color-surface-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px rgba(0, 0, 0, 0.18);
   transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
 }
 .card:hover {
-  border-color: var(--color-border-hover);
+  border-color: rgba(34, 197, 94, 0.22);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 12px 32px rgba(0, 0, 0, 0.26), 0 0 0 1px rgba(34, 197, 94, 0.06);
+  transform: translateY(-2px);
+}
+
+/* ── Brand gradient text ── */
+.text-gradient {
+  background: linear-gradient(100deg, #22C55E 10%, #22D3EE 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ── Brand gradient surface (buttons / accents) ── */
+.gradient-brand {
+  background: linear-gradient(120deg, #16A34A 0%, #22C55E 45%, #22D3EE 130%);
+  box-shadow: 0 8px 24px rgba(34, 197, 94, 0.22);
+  transition: filter 200ms ease, box-shadow 200ms ease, transform 200ms ease;
+}
+.gradient-brand:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 10px 32px rgba(34, 197, 94, 0.32);
   transform: translateY(-1px);
+}
+.gradient-brand:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* ── Ambient drifting glow (behind content) ── */
+.ambient-glow {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.ambient-glow::before,
+.ambient-glow::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.16;
+}
+.ambient-glow::before {
+  width: 480px;
+  height: 480px;
+  left: -120px;
+  top: -80px;
+  background: #22C55E;
+  animation: drift-a 18s ease-in-out infinite alternate;
+}
+.ambient-glow::after {
+  width: 420px;
+  height: 420px;
+  right: -100px;
+  bottom: -100px;
+  background: #22D3EE;
+  animation: drift-b 22s ease-in-out infinite alternate;
+}
+@keyframes drift-a {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(70px, 50px) scale(1.12); }
+}
+@keyframes drift-b {
+  from { transform: translate(0, 0) scale(1.05); }
+  to { transform: translate(-60px, -40px) scale(0.95); }
 }
 
 /* ── Skeleton ── */
@@ -132,7 +203,7 @@ body {
   content: '';
   position: absolute; inset: -2px;
   border-radius: inherit;
-  background: conic-gradient(from var(--border-angle, 0deg), rgba(34,197,94,0.7), transparent 40%, transparent 60%, rgba(34,197,94,0.7));
+  background: conic-gradient(from var(--border-angle, 0deg), rgba(34,197,94,0.75), rgba(34,211,238,0.35), transparent 45%, transparent 60%, rgba(34,197,94,0.75));
   animation: border-spin 4s linear infinite;
   opacity: 0;
   transition: opacity 300ms ease;
@@ -155,7 +226,7 @@ body {
   content: '';
   position: absolute; top: -50%; left: -50%;
   width: 200%; height: 200%;
-  background: radial-gradient(circle at var(--x, 50%) var(--y, 50%), rgba(34,197,94,0.12) 0%, transparent 50%);
+  background: radial-gradient(circle at var(--x, 50%) var(--y, 50%), rgba(34,211,238,0.10) 0%, rgba(34,197,94,0.08) 35%, transparent 60%);
   opacity: 0;
   transition: opacity 300ms ease;
   pointer-events: none;

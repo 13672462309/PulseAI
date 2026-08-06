@@ -7,9 +7,10 @@
 ---
 
 **Project:** HotMonitor
-**Generated:** 2026-08-02 19:09:35
-**Category:** Smart Home/IoT Dashboard
-**Design Dials:** Variance 8/10 (Bold / Asymmetric) | Motion 6/10 (Standard) | Density 8/10 (Dense / Dashboard)
+**Generated:** 2026-08-06 12:57:45
+**Last Refined:** 2026-08-06
+**Category:** AI Hot-Topic Monitoring / Investment Dashboard (Dark Mode)
+**Design Dials:** Variance 7/10 (Balanced / Modern) | Motion 6/10 (Standard) | Density 8/10 (Dense / Dashboard)
 
 ---
 
@@ -19,25 +20,26 @@
 
 | Role | Hex | CSS Variable |
 |------|-----|--------------|
-| Primary | `#1E40AF` | `--color-primary` |
-| On Primary | `#FFFFFF` | `--color-on-primary` |
-| Secondary | `#3B82F6` | `--color-secondary` |
-| Accent/CTA | `#D97706` | `--color-accent` |
-| Background | `#F8FAFC` | `--color-background` |
-| Foreground | `#1E3A8A` | `--color-foreground` |
-| Muted | `#E9EEF6` | `--color-muted` |
-| Border | `#DBEAFE` | `--color-border` |
-| Destructive | `#DC2626` | `--color-destructive` |
-| Ring | `#1E40AF` | `--color-ring` |
+| Background | `#0B0F19 → #070B14` | `--color-surface-root` |
+| Card | `#111827` | `--color-surface-card` |
+| Brand / Positive | `#22C55E` | `--color-brand` |
+| Brand Cyan (gradient partner) | `#22D3EE` | `--color-brand-cyan` |
+| Text Primary | `#F1F5F9` | `--color-text-primary` |
+| Text Secondary | `#94A3B8` | `--color-text-secondary` |
+| Text Muted | `#8494A8` | `--color-text-muted` |
+| Warning | `#D97706` | `--color-warning` |
+| Danger | `#EF4444` | `--color-danger` |
+| Border | `rgba(255,255,255,0.07)` | `--color-border` |
 
-**Color Notes:** Blue data + amber highlights [Accent adjusted from #F59E0B for WCAG 3:1]
+**Color Notes:** Dark fintech terminal + green/cyan gradients; tier colors: burst=danger, hot=warning, rising=positive.
 
 ### Typography
 
-- **Heading Font:** Fira Code
-- **Body Font:** Fira Sans
-- **Mood:** dashboard, data, analytics, code, technical, precise
-- **Google Fonts:** [Fira Code + Fira Sans](https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap)
+- **Heading Font:** Space Grotesk
+- **Body Font:** Inter
+- **Data Font:** JetBrains Mono
+- **Mood:** modern tech dashboard, data, precise, premium dark
+- **Google Fonts:** [Space Grotesk + Inter + JetBrains Mono](https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap)
 
 **CSS Import:**
 ```css
@@ -161,13 +163,13 @@
 
 ## Style Guidelines
 
-**Style:** Bento Grids
+**Style:** Modern Dark (Cinematic Dashboard)
 
-**Keywords:** Apple-style, modular, cards, organized, clean, hierarchy, grid, rounded, soft
+**Keywords:** dark mode, glassmorphism, ambient glow, gradient accent, hairline borders, premium, data-dense
 
-**Best For:** Product features, dashboards, personal sites, marketing summaries, galleries
+**Best For:** Fintech/trading dashboards, AI tool interfaces, monitoring consoles
 
-**Key Effects:** Hover scale (1.02), soft shadow expansion, smooth layout shifts, content reveal
+**Key Effects:** Ambient drifting glow blobs, gradient brand buttons, card top accent strips, KPI number count-up, staggered grid reveal (GSAP), Recharts area chart with gradient fill
 
 ### Page Pattern
 
@@ -197,8 +199,8 @@ gsap.from('.grid-item', { opacity: 0, scale: 0.92, y: 16, duration: 0.4, stagger
 
 ## Anti-Patterns (Do NOT Use)
 
-- ❌ Slow updates
-- ❌ No automation
+- ❌ Light mode default
+- ❌ Slow rendering
 
 ### Additional Forbidden Patterns
 

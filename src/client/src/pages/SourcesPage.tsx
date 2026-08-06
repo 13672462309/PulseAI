@@ -1,5 +1,6 @@
 import { useApi } from '../hooks/useApi.js';
 import type { SourceSummary } from '@shared/types.js';
+import { Icon } from '../components/icons.js';
 
 export function SourcesPage() {
   const { data } = useApi<SourceSummary[]>('/api/v1/sources');
@@ -19,13 +20,14 @@ export function SourcesPage() {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {sources.map(s => (
-          <div key={s.id} className="card p-4">
+          <div key={s.id} className="card p-4 relative overflow-hidden">
+            <span className={`absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r ${s.status === 'ok' ? 'from-positive to-brand' : s.status === 'degraded' ? 'from-warning to-amber-400' : 'from-danger to-warning'} opacity-60`} />
             <div className="flex items-center gap-2.5 mb-3">
               <span className={`w-2 h-2 rounded-full ${dot(s.status)} ${s.status === 'ok' ? 'status-pulse' : ''}`} />
               <span className="text-[14px] font-medium text-text-primary truncate">{s.name}</span>
             </div>
             <div className="text-[11px] text-text-muted space-y-1 font-mono">
-              <div className="flex justify-between"><span>类型</span><span className="text-text-secondary">{s.accessType}</span></div>
+              <div className="flex justify-between"><span className="inline-flex items-center gap-1"><Icon name="database" className="w-3 h-3" /> 类型</span><span className="text-text-secondary">{s.accessType}</span></div>
               <div className="flex justify-between"><span>最后抓取</span><span className="text-text-secondary">{rel(s.lastFetchedAt)}</span></div>
               {s.topicsFound24h !== undefined && <div className="flex justify-between"><span>24h 发现</span><span className="text-positive font-semibold">{s.topicsFound24h}</span></div>}
             </div>

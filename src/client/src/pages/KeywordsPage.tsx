@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApi, apiFetch } from '../hooks/useApi.js';
+import { Icon } from '../components/icons.js';
 
 interface KW { id: number; keyword: string; category: string; isActive: boolean; growthThreshold: number; }
 
@@ -20,13 +21,14 @@ export function KeywordsPage() {
         <div className="flex flex-wrap gap-2.5">
           <input value={kw} onChange={e => setKw(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="输入关键词，如：AI大模型..." className="bg-surface-elevated border border-border rounded-lg px-3.5 py-2.5 text-[13px] font-mono flex-1 min-w-[200px] focus:border-brand outline-none text-text-primary placeholder:text-text-muted" />
           <input value={cat} onChange={e => setCat(e.target.value)} placeholder="分类" className="bg-surface-elevated border border-border rounded-lg px-3.5 py-2.5 text-[13px] font-mono w-28 focus:border-brand outline-none text-text-primary placeholder:text-text-muted" />
-          <button onClick={add} disabled={adding} className="px-5 py-2.5 bg-brand text-white font-semibold text-[13px] rounded-lg hover:brightness-110 disabled:opacity-40 transition-all font-heading">添加</button>
+          <button onClick={add} disabled={adding} className="gradient-brand px-5 py-2.5 text-[#03120A] font-semibold text-[13px] rounded-lg disabled:opacity-40 disabled:pointer-events-none cursor-pointer font-heading">添加</button>
         </div>
       </div>
 
       <div className="space-y-1">
         {(kws || []).map(k => (
-          <div key={k.id} className={`card p-4 flex items-center justify-between group ${k.isActive ? '' : 'opacity-40'}`}>
+          <div key={k.id} className={`card p-4 flex items-center justify-between group relative overflow-hidden ${k.isActive ? '' : 'opacity-40'}`}>
+            <span className={`absolute inset-y-0 left-0 w-0.5 ${k.isActive ? 'bg-gradient-to-b from-positive to-brand' : 'bg-text-muted/40'}`} />
             <div className="flex items-center gap-3">
               <span className={`w-2 h-2 rounded-full ${k.isActive ? 'bg-positive status-pulse' : 'bg-text-muted'}`} />
               <span className="text-[14px] font-mono font-medium text-text-primary">{k.keyword}</span>
@@ -39,7 +41,13 @@ export function KeywordsPage() {
           </div>
         ))}
         {(!kws || !kws.length) && (
-          <div className="card p-10 text-center"><p className="text-text-muted text-sm">尚未添加关键词</p><p className="text-text-muted text-xs mt-1 opacity-60">在上方添加第一个监控目标</p></div>
+          <div className="card p-10 text-center space-y-3">
+            <span className="mx-auto w-12 h-12 rounded-2xl bg-brand-soft text-brand flex items-center justify-center">
+              <Icon name="search" className="w-6 h-6" />
+            </span>
+            <p className="text-text-muted text-sm">尚未添加关键词</p>
+            <p className="text-text-muted text-xs opacity-60">在上方添加第一个监控目标</p>
+          </div>
         )}
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useApi } from '../hooks/useApi.js';
+import { Icon } from '../components/icons.js';
 
 interface T {
   id: number;
@@ -128,19 +129,24 @@ export function TopicsPage() {
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <input
-          value={q}
-          onChange={e => apply({ q: e.target.value })}
-          placeholder="搜索话题..."
-          className="bg-surface-card border border-border rounded-lg px-3.5 py-2.5 text-[13px] font-mono w-48 focus:border-brand outline-none text-text-primary placeholder:text-text-muted transition-colors"
-        />
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted">
+            <Icon name="search" className="w-3.5 h-3.5" />
+          </span>
+          <input
+            value={q}
+            onChange={e => apply({ q: e.target.value })}
+            placeholder="搜索话题..."
+            className="bg-surface-card border border-border rounded-lg pl-8 pr-3.5 py-2.5 text-[13px] font-mono w-48 focus:border-brand outline-none text-text-primary placeholder:text-text-muted transition-colors"
+          />
+        </div>
         <span className="self-center text-[11px] font-mono text-text-muted">排序</span>
         <Select value={sort} onChange={e => apply({ sort: e.target.value })} opts={SORTS} />
         <Select value={tier} onChange={e => apply({ tier: e.target.value })} opts={[
           { v: '', l: '全部级别' },
-          { v: 'burst', l: '🚀 爆发' },
-          { v: 'hot', l: '🔥 热点' },
-          { v: 'rising', l: '📈 潜力' },
+          { v: 'burst', l: '爆发' },
+          { v: 'hot', l: '热点' },
+          { v: 'rising', l: '潜力' },
         ]} />
         <span className="self-center text-[11px] font-mono text-text-muted">发现时间</span>
         <Select value={since} onChange={e => apply({ since: e.target.value })} opts={TIME_RANGES} />
@@ -201,14 +207,14 @@ export function TopicsPage() {
               <p className="text-[14px] font-medium text-text-primary truncate group-hover:text-brand transition-colors">{t.title}</p>
               <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                 {t.matchedKeyword && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-brand-soft text-brand font-mono font-medium">#{t.matchedKeyword}</span>}
-                {t.isRumor === true && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-danger/10 text-danger font-mono font-semibold">⚠️ 疑似谣言</span>}
-                {t.isRumor === false && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-positive/10 text-positive font-mono">√ 不是谣言</span>}
+                {t.isRumor === true && <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-danger/10 text-danger font-mono font-semibold"><Icon name="alert-triangle" className="w-3 h-3" /> 疑似谣言</span>}
+                {t.isRumor === false && <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-positive/10 text-positive font-mono"><Icon name="check-circle" className="w-3 h-3" /> 不是谣言</span>}
                 <span className="text-[10px] text-text-muted">{t.source?.name}</span>
-                <span className="text-[10px] font-mono font-semibold text-positive">{(t.velocityScore ?? 0) > 0 ? '+' : ''}{(t.velocityScore ?? 0).toFixed(0)}</span>
+                <span className={`text-[10px] font-mono font-semibold ${(t.velocityScore ?? 0) > 0 ? 'text-positive' : (t.velocityScore ?? 0) < 0 ? 'text-danger' : 'text-text-muted'}`}>{(t.velocityScore ?? 0) > 0 ? '+' : ''}{(t.velocityScore ?? 0).toFixed(0)}</span>
               </div>
               <div className="flex items-center gap-3 mt-1 text-[10px] text-text-muted font-mono">
-                <span>🕒 发布 {formatTime(t.publishedAt) || '—'}</span>
-                <span>🔍 发现 {formatTime(t.firstSeenAt)}</span>
+                <span className="inline-flex items-center gap-1"><Icon name="clock" className="w-3 h-3" /> 发布 {formatTime(t.publishedAt) || '—'}</span>
+                <span className="inline-flex items-center gap-1"><Icon name="radar" className="w-3 h-3" /> 发现 {formatTime(t.firstSeenAt)}</span>
                 <span className="opacity-60" title="同一来源连续多轮采集到该话题的次数">连续上榜 {t.mentionCount} 次</span>
               </div>
             </div>
@@ -225,6 +231,9 @@ export function TopicsPage() {
         )}
         {!topics.length && data && (
           <div className="card p-10 text-center space-y-3">
+            <span className="mx-auto w-12 h-12 rounded-2xl bg-brand-soft text-brand flex items-center justify-center">
+              <Icon name="radar" className="w-6 h-6" />
+            </span>
             <p className="text-text-muted text-sm">没有符合条件的话题</p>
             {hasFilters && (
               <button
@@ -250,5 +259,5 @@ export function TopicsPage() {
 }
 
 function Select({ value, onChange, opts }: { value: string; onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void; opts: { v: string; l: string }[] }) {
-  return <select value={value} onChange={onChange} className="bg-surface-card border border-border rounded-lg px-3 py-2.5 text-[13px] font-mono outline-none text-text-primary transition-colors">{opts.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}</select>;
+  return <select value={value} onChange={onChange} className="bg-surface-card border border-border rounded-lg px-3 py-2.5 text-[13px] font-mono outline-none text-text-primary transition-colors cursor-pointer hover:border-brand/30 focus:border-brand">{opts.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}</select>;
 }

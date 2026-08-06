@@ -1,9 +1,16 @@
 import { useParams, Link } from 'react-router';
 import { useApi } from '../hooks/useApi.js';
 import { TopicDetailChart } from '../components/TopicDetailChart.js';
+import { Icon } from '../components/icons.js';
 
 interface HP { heatIndex: number; heatScore: number | null; growthRate: number | null; recordedAt: string; }
-interface TD { id: number; title: string; url: string | null; heatIndex: number; heatScore: number | null; velocityScore: number | null; growthRate: number | null; peakHeat: number; mentionCount: number; sourceRank: number | null; aiVerified: number; isRumor: boolean | null; aiSummary: string | null; aiCategory: string | null; matchedKeyword: string | null; firstSeenAt: string; lastSeenAt: string; source?: { name: string; slug: string }; history: HP[]; }
+interface TD { id: number; title: string; url: string | null; heatIndex: number; heatScore: number | null; velocityScore: number | null; growthRate: number | null; peakHeat: number; mentionCount: number; sourceRank: number | null; aiVerified: number; isRumor: boolean | null; aiSummary: string | null; aiCategory: string | null; matchedKeyword: string | null; tier: string | null; firstSeenAt: string; lastSeenAt: string; publishedAt?: string | null; source?: { name: string; slug: string }; history: HP[]; }
+
+const TIER_BADGE: Record<string, { icon: string; label: string; cls: string }> = {
+  burst: { icon: 'rocket', label: '爆发', cls: 'bg-danger/10 text-danger border-danger/25' },
+  hot: { icon: 'flame', label: '热点', cls: 'bg-warning/10 text-warning border-warning/25' },
+  rising: { icon: 'trending-up', label: '潜力', cls: 'bg-positive/10 text-positive border-positive/25' },
+};
 
 function formatHeat(score: number): string {
   if (score >= 10000) return (score / 10000).toFixed(1) + '万';
@@ -30,8 +37,13 @@ export function TopicDetailPage() {
             <h1 className="text-xl font-heading font-extrabold text-text-primary mb-3">{t.title}</h1>
             <div className="flex flex-wrap items-center gap-2 mb-3">
               {t.matchedKeyword && <span className="text-[11px] px-2.5 py-1 rounded-lg bg-brand-soft text-brand font-mono font-medium">#{t.matchedKeyword}</span>}
-              {t.isRumor === true && <span className="text-[11px] px-2.5 py-1 rounded-lg bg-danger/10 text-danger font-mono font-semibold">⚠️ 疑似谣言</span>}
-              {t.isRumor === false && <span className="text-[11px] px-2.5 py-1 rounded-lg bg-positive/10 text-positive font-mono">√ 不是谣言</span>}
+              {t.tier && TIER_BADGE[t.tier] && (
+                <span className={`inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg border font-mono font-semibold ${TIER_BADGE[t.tier].cls}`}>
+                  <Icon name={TIER_BADGE[t.tier].icon} className="w-3.5 h-3.5" /> {TIER_BADGE[t.tier].label}
+                </span>
+              )}
+              {t.isRumor === true && <span className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg bg-danger/10 text-danger font-mono font-semibold"><Icon name="alert-triangle" className="w-3.5 h-3.5" /> 疑似谣言</span>}
+              {t.isRumor === false && <span className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg bg-positive/10 text-positive font-mono"><Icon name="check-circle" className="w-3.5 h-3.5" /> 不是谣言</span>}
               {t.source && <span className="text-[11px] text-text-muted font-mono">{t.source.name}</span>}
             </div>
           </div>

@@ -28,7 +28,7 @@ export function SettingsPage() {
           <p className="text-text-muted text-xs mt-1 mb-3">{desc}</p>
           <div className="flex gap-2.5">
             <input value={form[key] || ''} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} className="bg-surface-elevated border border-border rounded-lg px-3.5 py-2.5 text-[13px] font-mono flex-1 focus:border-brand outline-none text-text-primary" />
-            <button onClick={() => save(key)} disabled={saving[key]} className="px-5 py-2.5 bg-brand text-white font-semibold text-[13px] rounded-lg hover:brightness-110 disabled:opacity-40 transition-all font-heading">保存</button>
+            <button onClick={() => save(key)} disabled={saving[key]} className="gradient-brand px-5 py-2.5 text-[#03120A] font-semibold text-[13px] rounded-lg disabled:opacity-40 disabled:pointer-events-none cursor-pointer font-heading">{saving[key] ? '保存中...' : '保存'}</button>
           </div>
         </div>
       ))}

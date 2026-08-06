@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Link } from 'react-router';
 import { useApi } from '../hooks/useApi.js';
+import { Icon } from './icons.js';
 
 interface VT { id: number; title: string; velocityScore: number | null; heatIndex: number; heatScore: number | null; growthRate: number | null; aiCategory: string | null; tier: string | null; source: { name: string }; }
 
@@ -11,9 +12,9 @@ function formatHeat(score: number): string {
 }
 
 const TIER = {
-  burst:  { emoji: '🚀', label: '爆发', bg: 'bg-danger/8', border: 'border-danger/25', text: 'text-danger' },
-  hot:    { emoji: '🔥', label: '热点', bg: 'bg-warning/8', border: 'border-warning/20', text: 'text-warning' },
-  rising: { emoji: '📈', label: '潜力', bg: 'bg-positive/8', border: 'border-positive/20', text: 'text-positive' },
+  burst:  { icon: 'rocket', label: '爆发', bg: 'bg-danger/8', border: 'border-danger/25', text: 'text-danger', bar: 'from-danger to-warning' },
+  hot:    { icon: 'flame', label: '热点', bg: 'bg-warning/8', border: 'border-warning/20', text: 'text-warning', bar: 'from-warning to-amber-400' },
+  rising: { icon: 'trending-up', label: '潜力', bg: 'bg-positive/8', border: 'border-positive/20', text: 'text-positive', bar: 'from-positive to-brand' },
 } as const;
 
 export function VelocityGrid() {
@@ -53,17 +54,17 @@ export function VelocityGrid() {
           const tier = t.tier ? TIER[t.tier as keyof typeof TIER] : undefined;
           const tierBorder = tier ? tier.border : 'border-border';
           const heatPct = Math.min(t.heatIndex, 100);
-          const barColor = t.tier === 'burst' ? 'bg-danger' : t.tier === 'rising' ? 'bg-positive' : 'bg-warning';
 
           return (
             <Link key={t.id} to={`/topics/${t.id}`}
-              className={`grid-item glow-card card p-4 no-underline group ${tierBorder} ${t.tier === 'burst' ? 'fracture' : ''}`}
+              className={`grid-item glow-card card p-4 no-underline group relative overflow-hidden ${tierBorder} ${t.tier === 'burst' ? 'fracture' : ''}`}
             >
+              {tier && <span className={`absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r ${tier.bar} opacity-60`} />}
               {/* Tier badge */}
               <div className="flex items-center justify-between mb-3">
                 {tier ? (
                   <span className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded ${tier.bg} ${tier.text}`}>
-                    {tier.emoji} {tier.label}
+                    <Icon name={tier.icon} className="w-3 h-3 inline-block -mt-0.5 mr-1 align-middle" /> {tier.label}
                   </span>
                 ) : (
                   <span className="text-[10px] font-mono text-text-muted">{t.aiCategory || '未分类'}</span>
@@ -85,7 +86,7 @@ export function VelocityGrid() {
 
               {/* Heat bar */}
               <div className="h-1 bg-white/[0.06] rounded-full overflow-hidden mb-2.5">
-                <div className={`h-full rounded-full transition-all duration-700 ${barColor}`} style={{ width: `${heatPct}%` }} />
+                <div className={`h-full rounded-full transition-all duration-700 bg-gradient-to-r ${tier ? tier.bar : 'from-brand to-brand-cyan'}`} style={{ width: `${heatPct}%` }} />
               </div>
 
               {/* Footer */}
