@@ -37,7 +37,7 @@ alertsRouter.get('/', async (req: Request, res: Response) => {
 // POST /api/v1/alerts/:id/read
 alertsRouter.post('/:id/read', async (req: Request, res: Response) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const alert = await prisma.alert.update({
       where: { id },
       data: { isRead: true },

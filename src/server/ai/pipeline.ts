@@ -189,27 +189,48 @@ export async function classifyTiers(): Promise<void> {
   // Compute velocityScore for ALL recent keyword-relevant topics (not just tiered ones),
   // so every card shows a growth number. Only topics confirmed relevant by the AI pipeline
   // (matchedKeyword set) get classified — unprocessed topics stay invisible in the lists.
+  // Topics that already carry a tier are also included so stale tiers get demoted
+  // once they stop appearing for a full active window (7 days).
+  const now = Date.now();
+  const activeWindow = new Date(now - 7 * 24 * 3600_000);
   const topics = await prisma.topic.findMany({
     where: {
-      matchedKeyword: { not: null },
-      lastSeenAt: { gte: new Date(Date.now() - 24 * 3600_000) },
+      OR: [
+        { matchedKeyword: { not: null }, lastSeenAt: { gte: activeWindow } },
+        { tier: { not: null } },
+      ],
     },
     include: { history: { orderBy: { recordedAt: 'desc' }, take: 10 } },
   });
 
   for (const t of topics) {
+    // 超过 7 天没再被抓到 → 热度已回落，级别自动降级（不再占用 KPI/列表名额）
+    if (t.lastSeenAt.getTime() < now - 7 * 24 * 3600_000) {
+      await prisma.topic.update({
+        where: { id: t.id },
+        data: { tier: null, recommendScore: t.heatScore ?? 0 },
+      });
+      continue;
+    }
+
     // Count unique sources
     const sourceCount = await prisma.topic.count({
-      where: { normalizedTitle: t.normalizedTitle, lastSeenAt: { gte: new Date(Date.now() - 24 * 3600_000) } },
+      where: { normalizedTitle: t.normalizedTitle, lastSeenAt: { gte: activeWindow } },
     });
 
     // Velocity from heatScore observations (growthRate = % change vs first observation)
     const growthRate = t.growthRate;
     if (growthRate == null || t.heatScore == null) {
       // No baseline yet — write a visible 0 so the card still shows a number
-      if (t.velocityScore !== 0) {
-        await prisma.topic.update({ where: { id: t.id }, data: { velocityScore: 0 } });
-      }
+      const tierWeight = t.tier === 'burst' ? 5000 : t.tier === 'hot' ? 3000 : t.tier === 'rising' ? 1500 : 0;
+      const freshness = Math.max(0, 48 - (Date.now() - t.lastSeenAt.getTime()) / 3600_000) * 10;
+      await prisma.topic.update({
+        where: { id: t.id },
+        data: {
+          velocityScore: 0,
+          recommendScore: tierWeight + (t.heatScore ?? 0) + freshness,
+        },
+      });
       continue;
     }
     const sourceDiv = 1 + sourceCount * 0.2;
@@ -227,9 +248,14 @@ export async function classifyTiers(): Promise<void> {
       tier = velocityScore >= RISING_THRESHOLD ? 'rising' : null;
     }
 
+    // Comprehensive recommendation: tier priority dominates, then velocity + heat + freshness.
+    const tierWeight = tier === 'burst' ? 5000 : tier === 'hot' ? 3000 : tier === 'rising' ? 1500 : 0;
+    const freshness = Math.max(0, 48 - (Date.now() - t.lastSeenAt.getTime()) / 3600_000) * 10;
+    const recommendScore = tierWeight + Math.max(0, velocityScore) + t.heatScore + freshness;
+
     await prisma.topic.update({
       where: { id: t.id },
-      data: { velocityScore, tier },
+      data: { velocityScore, tier, recommendScore },
     });
 
     // Alert for burst
@@ -322,6 +348,7 @@ async function processChunk(
       velocityScore: t.velocityScore, aiVerified, aiSummary: summary,
       aiCategory: category, tier, matchedKeyword: relevance.matchedKeyword,
       firstSeenAt: t.firstSeenAt.toISOString(), lastSeenAt: t.lastSeenAt.toISOString(),
+      publishedAt: t.publishedAt?.toISOString() ?? null,
       peakHeat: t.peakHeat, mentionCount: t.mentionCount,
     });
 
@@ -394,4 +421,3 @@ async function createAlert(topicId: number, keywordId: number | null, type: stri
     isRead: alert.isRead, createdAt: alert.createdAt.toISOString(), topicTitle: alert.topic?.title,
   });
 }
-

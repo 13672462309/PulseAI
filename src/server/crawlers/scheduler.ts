@@ -21,6 +21,7 @@ type CrawlerFn = () => Promise<Array<{
   heatIndex: number;
   heatScore: number | null;
   rawHeat: number | null;
+  publishedAt?: number | string | Date | null;
 }>>;
 
 // Heat decay: half-life of 24h — mega-hits cool down naturally instead of dominating forever
@@ -156,7 +157,7 @@ async function crawlSource(source: Source): Promise<number> {
 }
 
 async function saveTopic(
-  raw: { title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null },
+  raw: { title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null; publishedAt?: number | string | Date | null },
   sourceId: number
 ): Promise<void> {
   const normalizedTitle = normalizeTitle(raw.title);
@@ -189,6 +190,8 @@ async function saveTopic(
         ...(raw.heatScore != null ? { heatScore: raw.heatScore } : {}),
         // Baseline is written only once (if this topic's first observation is still missing)
         ...(raw.heatScore != null && existing.prevHeatScore == null ? { prevHeatScore: raw.heatScore } : {}),
+        // Keep the original publish time if the source provides one (never overwrite with null)
+        ...(raw.publishedAt != null ? { publishedAt: toDate(raw.publishedAt) } : {}),
         growthRate,
         lastSeenAt: new Date(),
         mentionCount: { increment: 1 },
@@ -219,6 +222,7 @@ async function saveTopic(
         heatScore: raw.heatScore,
         prevHeatScore: raw.heatScore, // first observation becomes the growth baseline
         rawHeat: raw.rawHeat,
+        publishedAt: toDate(raw.publishedAt),
         firstSeenAt: new Date(),
         lastSeenAt: new Date(),
         peakHeat: raw.heatIndex,
@@ -237,6 +241,7 @@ async function saveTopic(
       rawHeat: topic.rawHeat,
       growthRate: null,
       velocityScore: null,
+      publishedAt: topic.publishedAt?.toISOString() ?? null,
       aiVerified: 0,
       aiSummary: null,
       aiCategory: null,
@@ -248,6 +253,12 @@ async function saveTopic(
       matchedKeyword: null,
     });
   }
+}
+
+function toDate(v: number | string | Date | null | undefined): Date | null {
+  if (v == null) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 async function getRecentFailures(sourceId: number): Promise<number> {

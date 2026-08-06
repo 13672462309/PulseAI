@@ -47,7 +47,7 @@ export function TopicDetailPage() {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Meta label="峰值热力值" value={t.peakHeat.toFixed(0)} />
-        <Meta label="提及次数" value={String(t.mentionCount)} />
+        <Meta label="连续上榜次数" value={String(t.mentionCount)} />
         <Meta label="来源排名" value={t.sourceRank?.toString() || '—'} />
         <Meta label="首次发现" value={new Date(t.firstSeenAt).toLocaleDateString('zh-CN')} />
       </div>

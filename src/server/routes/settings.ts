@@ -20,7 +20,7 @@ settingsRouter.get('/', async (_req: Request, res: Response) => {
 // PUT /api/v1/settings/:key
 settingsRouter.put('/:key', async (req: Request, res: Response) => {
   try {
-    const { key } = req.params;
+    const key = String(req.params.key);
     const { value } = req.body;
     if (value === undefined) {
       return res.status(400).json({ error: 'Value is required' });

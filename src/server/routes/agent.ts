@@ -51,8 +51,11 @@ agentRouter.get('/search', async (req: Request, res: Response) => {
         aiVerified: t.aiVerified,
         aiSummary: t.aiSummary,
         aiCategory: t.aiCategory,
+        tier: t.tier,
+        matchedKeyword: t.matchedKeyword,
         firstSeenAt: t.firstSeenAt.toISOString(),
         lastSeenAt: t.lastSeenAt.toISOString(),
+        publishedAt: t.publishedAt?.toISOString() ?? null,
         peakHeat: t.peakHeat,
         mentionCount: t.mentionCount,
       })),
@@ -113,9 +116,10 @@ agentRouter.post('/monitor', async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     if (err?.code === 'P2002') {
+      const kw = String(req.body?.keyword || '').trim();
       return res.json({
         success: false,
-        message: `Already monitoring "${keyword.trim()}"`,
+        message: `Already monitoring "${kw}"`,
       });
     }
     res.status(500).json({ error: 'Failed to add keyword' });

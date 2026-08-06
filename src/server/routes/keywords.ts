@@ -47,7 +47,7 @@ keywordsRouter.post('/', async (req: Request, res: Response) => {
 // PUT /api/v1/keywords/:id
 keywordsRouter.put('/:id', async (req: Request, res: Response) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const { keyword, category, growthThreshold } = req.body;
 
     const existing = await prisma.keyword.findUnique({ where: { id } });
@@ -81,7 +81,7 @@ keywordsRouter.put('/:id', async (req: Request, res: Response) => {
 // DELETE /api/v1/keywords/:id
 keywordsRouter.delete('/:id', async (req: Request, res: Response) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     await prisma.keyword.delete({ where: { id } });
     res.status(204).send();
   } catch (err: any) {
@@ -95,7 +95,7 @@ keywordsRouter.delete('/:id', async (req: Request, res: Response) => {
 // POST /api/v1/keywords/:id/pause
 keywordsRouter.post('/:id/pause', async (req: Request, res: Response) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id));
     const keyword = await prisma.keyword.findUnique({ where: { id } });
     if (!keyword) return res.status(404).json({ error: 'Keyword not found' });
 

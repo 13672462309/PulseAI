@@ -25,7 +25,7 @@ interface HNResponse {
  * Hacker News keyword search via hn.algolia.com.
  * Queries each active keyword (first English query term), returns recent stories.
  */
-export async function crawlHackerNews(): Promise<Array<{ title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null }>> {
+export async function crawlHackerNews(): Promise<Array<{ title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null; publishedAt?: number | string | Date | null }>> {
   const keywords = await prisma.keyword.findMany({ where: { isActive: true }, select: { keyword: true } });
   if (!keywords.length) return [];
 
@@ -74,6 +74,7 @@ export async function crawlHackerNews(): Promise<Array<{ title: string; url: str
       heatIndex: Math.round((score / maxEngagement) * 100),
       heatScore: calcHeatScore(score * HN_ENGAGEMENT_MULTIPLIER),
       rawHeat: score,
+      publishedAt: hit.created_at,
     };
   }).slice(0, 60);
 }

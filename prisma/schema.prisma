@@ -62,6 +62,8 @@ model Topic {
   matchedKeyword  String?   // which keyword this topic matched
   firstSeenAt     DateTime
   lastSeenAt      DateTime
+  publishedAt     DateTime? // original publish time from the source (null when unknown)
+  recommendScore  Float?    // comprehensive recommendation score (tier + velocity + heat + freshness)
   peakHeat        Float    @default(0)
   mentionCount    Int      @default(1)
 
@@ -71,6 +73,9 @@ model Topic {
 
   @@index([normalizedTitle])
   @@index([firstSeenAt])
+  @@index([lastSeenAt])
+  @@index([publishedAt])
+  @@index([recommendScore])
   @@index([sourceId])
   @@index([velocityScore])
 }

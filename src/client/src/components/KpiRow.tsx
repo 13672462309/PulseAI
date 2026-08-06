@@ -10,9 +10,9 @@ type CardDef = {
 };
 
 const cards: CardDef[] = [
-  { key: 'burstCount', label: '爆发话题', icon: '🚀', color: 'text-danger', bg: 'bg-danger/5', border: 'border-danger/20', link: '/topics?tier=burst' },
-  { key: 'hotCount', label: '热点话题', icon: '🔥', color: 'text-warning', bg: 'bg-warning/5', border: 'border-warning/20', link: '/topics?tier=hot' },
-  { key: 'risingCount', label: '潜力话题', icon: '📈', color: 'text-positive', bg: 'bg-positive/5', border: 'border-positive/20', link: '/topics?tier=rising' },
+  { key: 'burstCount', label: '爆发话题 · 7d', icon: '🚀', color: 'text-danger', bg: 'bg-danger/5', border: 'border-danger/20', link: '/topics?tier=burst' },
+  { key: 'hotCount', label: '热点话题 · 7d', icon: '🔥', color: 'text-warning', bg: 'bg-warning/5', border: 'border-warning/20', link: '/topics?tier=hot' },
+  { key: 'risingCount', label: '潜力话题 · 7d', icon: '📈', color: 'text-positive', bg: 'bg-positive/5', border: 'border-positive/20', link: '/topics?tier=rising' },
   { key: 'sourcesOnline', label: '数据源在线', icon: '📡', color: 'text-brand', bg: 'bg-brand/5', border: 'border-brand/20', fmt: (_: number, s: Stats) => `${s.sourcesOnline}/${s.sourcesTotal}` },
 ];
 
