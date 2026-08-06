@@ -10,7 +10,10 @@
 - 📈 **潜力话题追踪** — 热度值增速（当前−初始）发现"正在变热"的话题，三级分类（🚀爆发/🔥热点/📈潜力）每轮重算可降级
 - 🤖 **AI 内容验证** — 批量判定（12条/批 × 并发2路）+ 营销/谣言识别，入榜话题显示 ⚠️疑似谣言/√不是谣言
 - 🌐 **8 数据源** — 微博/百度/B站（双通道）/36氪/搜狗（双通道）/Bing/Hacker News/通用搜索
-- 🎨 **赛博朋克 UI** — 指挥中心风格，KPI 可点击跳转筛选，热度趋势图
+- 🧭 **智能排序与筛选** — 综合推荐默认排序 + 最新发布/最新发现；发现时间范围、动态关键词、信息来源多选筛选，全部条件同步 URL
+- 🕒 **发布/发现双时间** — 列表标注原始发布时间（B站/36氪/HN）与系统发现时间
+- 📊 **7 天活跃口径** — KPI、实时网格、级别判定统一为近 7 天，超期话题自动降级
+- 🎨 **深色金融仪表盘 UI** — Space Grotesk + 绿青渐变 + 玻璃拟态，SVG 图标、KPI 数字动画、渐变面积趋势图
 - 🔌 **Agent Skill** — 可被其他 AI 调用查询热点
 
 ## 快速开始
@@ -75,22 +78,23 @@ ai-hotmonitor/
 │   ├── client/          # React 前端
 │   │   └── src/
 │   │       ├── pages/   # 仪表盘/话题/详情/关键词/源/设置
-│   │       ├── components/ # KpiRow / VelocityGrid / TopicDetailChart
+│   │       ├── components/ # KpiRow / VelocityGrid / TopicDetailChart / icons
 │   │       └── hooks/   # useApi, useSocket
 │   └── shared/          # 共享类型定义
 ├── agent-skill/         # Agent Skill 封装
-├── prisma/              # Schema + 6 个迁移
-├── REQUIREMENTS.md      # 需求文档（v3）
-└── DESIGN.md            # 架构设计文档（v3）
+├── prisma/              # Schema + 9 个迁移
+├── REQUIREMENTS.md      # 需求文档（v3.1）
+└── DESIGN.md            # 架构设计文档（v3.1）
 ```
 
 ## API 端点
 
 ```
 GET/POST    /api/v1/keywords          # 关键词管理（新词自动生成英文搜索词）
-GET         /api/v1/topics            # 话题列表（分页/筛选/排序，默认热度值）
-GET         /api/v1/topics/hot        # 热度榜（热度值降序）
-GET         /api/v1/topics/trending   # 增速榜
+GET         /api/v1/topics            # 话题列表（分页/筛选/排序，默认综合推荐；关键词/来源多选、发现时间范围）
+GET         /api/v1/topics/filter-options  # 筛选选项（关键词+来源，带计数）
+GET         /api/v1/topics/hot        # 热度榜（热度值降序，7天窗口）
+GET         /api/v1/topics/trending   # 增速榜（7天窗口）
 GET         /api/v1/topics/:id        # 话题详情 + 热度趋势
 GET/POST    /api/v1/alerts            # 告警管理
 GET         /api/v1/sources           # 数据源健康

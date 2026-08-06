@@ -1,6 +1,6 @@
 # 热点监控工具 — 架构设计文档
 
-> 版本: v3.0 | 2026-08-03 | 技术栈已按实际运行状态验证
+> 版本: v3.1 | 2026-08-06 | 技术栈已按实际运行状态验证
 
 ---
 
@@ -119,6 +119,8 @@ velocityScore = growthRate × √(热度值+1) × 来源多样性系数 ÷ 10
    否则         → 无级别
 ```
 
+**活跃窗口（v3.1）**：KPI、实时网格、级别判定统一采用 **7 天**口径——话题超过 7 天未再被抓到，级别自动降级为无级别，避免"僵尸级别"占用指挥中心名额。
+
 ---
 
 ## 5. AI 管线（OpenRouter，已验证）
@@ -215,6 +217,8 @@ model Topic {
   aiCategory      String?
   tier            String?                   // burst | hot | rising | null
   matchedKeyword  String?                   // 关联关键词
+  publishedAt     DateTime?                 // 原始发布时间（B站/36氪/HN 可采集，可空）
+  recommendScore  Float?                    // 综合推荐分（级别权重+增速+热度+新鲜度）
   mentionCount    Int      @default(1)
 }
 
@@ -241,6 +245,9 @@ model Alert {
 | add_history_heat_score | TopicHistory.heatScore |
 | alert_topic_cascade | Alert 级联删除 |
 | add_is_rumor | Topic.isRumor |
+| add_published_at_and_recommend_score | Topic.publishedAt / recommendScore + 索引 |
+| backfill_recommend_score | 存量话题回填综合推荐分 |
+| fix_backfill_recommend_score | 修正回填（epoch 毫秒新鲜度计算） |
 
 ---
 
@@ -253,9 +260,10 @@ model Alert {
   POST        /api/v1/keywords/:id/pause
 
 话题
-  GET         /api/v1/topics              # 分页/筛选（tier/category/keyword）/排序（heatScore 默认）
-  GET         /api/v1/topics/hot          # 热度榜（heatScore desc，nulls last）
-  GET         /api/v1/topics/trending     # 增速榜
+  GET         /api/v1/topics              # 分页/筛选（tier/keyword/keywords/sources/since）/排序（recommendScore 默认，白名单）
+  GET         /api/v1/topics/filter-options  # 筛选选项（关键词+来源，带计数）
+  GET         /api/v1/topics/hot          # 热度榜（heatScore desc，7天窗口）
+  GET         /api/v1/topics/trending     # 增速榜（7天窗口）
   GET         /api/v1/topics/:id          # 详情（含 history/heatScore 趋势）
   GET         /api/v1/topics/:id/history
 
@@ -263,7 +271,7 @@ model Alert {
   GET/POST    /api/v1/alerts ...
   GET         /api/v1/sources             # 源健康（含24h话题数）
   GET/PUT     /api/v1/settings
-  GET         /api/v1/stats               # KPI（burst/hot/rising 计数等）
+  GET         /api/v1/stats               # KPI（burst/hot/rising 计数等，7天活跃口径）
   GET         /api/v1/stats/velocity
 
 系统
@@ -282,19 +290,24 @@ Agent
 
 | 路径 | 页面 | 要点 |
 |------|------|------|
-| `/` | DashboardPage | KPI行（可点击跳转筛选）+ 实时话题网格（heatScore 降序） |
-| `/topics` | TopicsPage | 筛选（级别/分类/关键词）+ 排序（热度值/增速/热力值/时间）+ 分页；#关键词与谣言徽章 |
-| `/topics/:id` | TopicDetailPage | 热度值趋势图 + #关键词 + ⚠️谣言标记 + 热度值/热力值/增速 |
+| `/` | DashboardPage | KPI行（7天活跃口径，可点击跳转筛选）+ 实时话题网格（heatScore 降序，7天窗口） |
+| `/topics` | TopicsPage | 筛选（发现时间范围/关键词多选/来源多选/级别）+ 排序（综合推荐/热度值/增速/热力值/连续上榜/最新发布/最新发现）+ 分页 + URL同步；发布/发现时间、#关键词与谣言徽章 |
+| `/topics/:id` | TopicDetailPage | 渐变面积趋势图 + 级别徽章 + #关键词 + ⚠️谣言标记 + 热度值/热力值/增速 + 发布时间 |
 | `/keywords` | KeywordsPage | CRUD + 暂停/激活 |
 | `/sources` | SourcesPage | 源健康 |
 | `/settings` | SettingsPage | 配置 |
 
-### 9.2 术语（v3 统一）
+### 9.2 术语（v3.1 统一）
 
 | 术语 | 对应 | 展示 |
 |------|------|------|
 | 热度值 | heatScore | 千分位/万格式化（1,275 / 1.2万） |
 | 热力值 | heatIndex | 0-100 数字 + 热力条 |
+| 综合推荐 | recommendScore | 默认排序：级别权重+增速+热度+新鲜度 |
+| 发布时间 | publishedAt | 原始发布时间（B站/36氪/HN；未知显示 —） |
+| 发现时间 | firstSeenAt | 首次被系统抓取/发现的时间 |
+| 最新发现 | lastSeenAt | 最近一次被抓取的时间（排序用） |
+| 连续上榜 | mentionCount | 同一来源连续多轮采集到该话题的次数 |
 
 ---
 
@@ -326,7 +339,7 @@ src/
 
 ---
 
-## 11. 关键设计决策（v3）
+## 11. 关键设计决策（v3.1）
 
 1. **got + cheerio 而非 axios**：功能等价、内置重试/超时，保持现有稳定实现
 2. **双热度体系**：热力值（0-100 展示/阈值）+ 热度值（无界真实量级）分离，避免归一化抹平量级
@@ -337,3 +350,9 @@ src/
 7. **verify 精简且子集化**：保留营销/谣言识别，移除摘要/分类（省时）
 8. **`tsx watch < NUL`**：解决 Windows 下 concurrently 无 TTY 挂起（stdin 空设备）
 9. **手动触发与定时器共享 running 锁**：杜绝并发管线数据竞争
+10. **综合推荐分（recommendScore）**：级别权重 + 增速 + 热度 + 新鲜度，作为默认排序，让"正在爆发/上升"的话题优先于死热度霸榜
+11. **7 天活跃窗口统一口径**：KPI/实时网格/级别判定共用同一窗口，超过 7 天未再被抓到自动降级，消除"僵尸级别"与数字不一致
+12. **发布/发现双时间**：`publishedAt`（可空）与 `firstSeenAt`/`lastSeenAt` 分离，避免用发现时间冒充发布时间
+13. **排序白名单**：topics 排序字段白名单校验，杜绝非法字段注入导致 500
+14. **36氪 RSS 兜底可达**：JSON API 任意失败（含解析失败）都会降级 RSS，避免整源空手而归
+15. **UI UX Pro Max 设计系统**：深色金融仪表盘风格（Space Grotesk + 绿青渐变 + 玻璃拟态），SVG 图标替换 emoji，KPI 数字动画与渐变面积图
