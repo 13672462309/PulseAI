@@ -1,6 +1,6 @@
 import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
-import type { TopicSummary, AlertSummary } from '../shared/types.js';
+import type { TopicSummary, AlertSummary, CrawlStatus } from '../shared/types.js';
 
 let io: Server;
 
@@ -47,8 +47,8 @@ export function broadcastNewTopic(topic: TopicSummary): void {
   if (topic.tier) {
     io.to(`tier:${topic.tier}`).emit('new_topic', topic);
   }
-  if (topic.aiCategory) {
-    io.to(`category:${topic.aiCategory}`).emit('new_topic', topic);
+  if (topic.matchedKeyword) {
+    io.to(`category:${topic.matchedKeyword}`).emit('new_topic', topic);
   }
 }
 
@@ -63,6 +63,11 @@ export function broadcastAlert(alert: AlertSummary): void {
 export function broadcastSourceStatus(sourceId: number, status: string): void {
   if (!io) return;
   io.emit('source_status', { sourceId, status });
+}
+
+export function broadcastCrawlStatus(status: CrawlStatus): void {
+  if (!io) return;
+  io.emit('crawl_status', status);
 }
 
 export { io };

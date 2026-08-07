@@ -56,10 +56,14 @@ model Topic {
   velocityScore   Float?
   aiVerified      Int      @default(0)
   isRumor         Boolean? // derived from verify classification (rumor_unverified); null = not verified
+  isActionable    Boolean? // AI: worth acting on (market attention / investment reference)
   aiSummary       String?
   aiCategory      String?
   tier            String?   // "burst" | "hot" | "rising" | null (not keyword-relevant)
   matchedKeyword  String?   // which keyword this topic matched
+  matchReason     String?   // AI: short reason why this topic matches a keyword
+  matchConfidence Float?    // AI: relevance confidence 0-1
+  engagement      String?   // JSON: per-source engagement breakdown (views/comments/etc.)
   firstSeenAt     DateTime
   lastSeenAt      DateTime
   publishedAt     DateTime? // original publish time from the source (null when unknown)

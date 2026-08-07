@@ -1,7 +1,7 @@
 # 变更记录（CHANGELOG）
 
 > 记录 HotMonitor 从 v1 到 v3 的全部功能迭代、架构修改与技术栈演变
-> 最后更新: 2026-08-06
+> 最后更新: 2026-08-07
 
 ---
 
@@ -14,6 +14,7 @@
 | v2.1 | `15b0596` | UI 重构（Aceternity 风格开发者美学） |
 | v3 | `a3bbc43` `49e0c37` `14e73ba` | 信息源优化 + 无界热度体系 + 管线并发优化 + 内容过滤 + 谣言标记 |
 | v3.1 | `bf22ab6` `ed931f3` | 话题排序/筛选增强 + 7 天活跃口径 + 界面视觉升级 |
+| v3.2 | — | 价值信号展示（理由/置信度/互动量/榜单排名/值得关注）+ 一行一话题 UI + 扫描进度 |
 
 ---
 
@@ -209,7 +210,38 @@
 
 ---
 
-## 四、技术栈演变
+## 四、v3.1 → v3.2：价值信号展示与扫描进度
+
+### 4.1 核心变化
+
+| 维度 | v3.1 | v3.2 |
+|------|------|------|
+| **相关性展示** | 仅 #关键词 徽章 | AI 匹配理由（15-25 字）+ 置信度；列表默认收起理由、点击展开，置信度常驻 |
+| **内容验证** | classification + confidence + isActionable（confidence/isActionable 未使用） | **精简为 isVerified / isRumor / isActionable 三个布尔**，省 token、响应更快、语义等价 |
+| **值得关注** | 无 | isActionable 展示为「值得关注」徽标 |
+| **互动数据** | rawHeat 加权汇总（未展示） | **engagement JSON 明细**：微博热度/标签、百度搜索指数、B站播放/弹幕/评论/收藏/点赞、HN 分数/评论；列表主指标 + 详情分项 |
+| **榜单排名** | 仅详情页来源排名 | 微博/百度/B站热榜前 10 显示 `#N 来源`，其他来源不显示序号 |
+| **话题行 UI** | 首页多列网格 + 列表卡片 | **一行一话题 TopicRow 全宽行**（Dashboard 与 TopicsPage 共用），热度值/增速同字号大字 |
+| **热力值** | 话题行展示 0-100 | 移出行内展示（保留分级阈值与详情页指标） |
+| **扫描可见性** | 无全局状态 | **全局扫描进度条**：百分比 + 阶段 + 当前来源 + 已发现条数；完成短暂提示 |
+| **废弃字段** | aiSummary/aiCategory/rawHeat 持续写入 | **停止写入并移除 API 展示**（数据库列保留，待后续 migration 删除） |
+
+### 4.2 数据与接口
+
+- 迁移 `add_topic_engagement_signals`：Topic 新增 `matchReason` / `matchConfidence` / `engagement` / `isActionable`
+- 新增 `GET /api/v1/crawl/status` 与 Socket `crawl_status` 事件
+- 爬虫统一输出 `CrawlerItem.engagement`；调度器维护 `CrawlStatus`（爬取 0-80%、AI 82-98%、完成 100%）
+- topics/agent 路由移除 aiSummary/aiCategory/rawHeat 响应字段，category 过滤改用 matchedKeyword
+
+### 4.3 前端
+
+- 新增 `TopicRow`（Dashboard 与 TopicsPage 共用）、`ScanStatusBar`（全局进度条）、`utils/format.ts`（热度/互动量格式化）
+- 详情页新增「AI 相关性分析」（理由 + 置信度）与「互动数据」分项
+- 修复 Socket 监听清理返回类型（useSocket）
+
+---
+
+## 五、技术栈演变
 
 | 层 | v2 | v3 | 说明 |
 |----|-----|-----|------|
@@ -224,7 +256,7 @@
 
 ---
 
-## 五、关键修复清单（按严重性）
+## 六、关键修复清单（按严重性）
 
 1. **OpenRouter SDK 调用格式错误** → AI 语义判定从未生效（全项目影响最大的 bug）
 2. **DeepSeek JSON 代码围栏** → 批量判定静默失败、管线"看似运行实则不动"
@@ -240,10 +272,12 @@
 
 ---
 
-## 六、遗留与后续建议
+## 七、遗留与后续建议
 
 - 增速分阈值（30/100）为常量，可基于真实数据分布校准
 - 跨源话题聚类未实现（同一话题多源为独立记录）
 - 微博搜索通道被风控（如需可接入登录态 cookie）
 - 搜狗搜索通道受验证码频率限制（自动降级）
 - 谣言判定 prompt 可调保守度（当前对强断言标题偏敏感）
+- 废弃列 aiSummary/aiCategory/rawHeat 已停写，待后续 migration 删除
+- 热力值已移出行内展示，但仍作为分级阈值核心，若移除需重构定级标准

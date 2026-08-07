@@ -1,6 +1,6 @@
 # 热点监控工具 — 架构设计文档
 
-> 版本: v3.1 | 2026-08-06 | 技术栈已按实际运行状态验证
+> 版本: v3.2 | 2026-08-07 | 技术栈已按实际运行状态验证
 
 ---
 
@@ -70,6 +70,8 @@
 > 已删除：Twitter（twitterapi.io 无额度）、Google（news.google.com 国内不可达）。
 > 微博搜索接口被风控（432/403），仅保留热榜通道。
 
+> **v3.2**：各爬虫额外输出结构化互动明细（`engagement` JSON）——微博 `hot/tag`、百度 `hotScore`、B站 `views/danmaku/comments/favorites/likes`、HN `points/comments`；36氪/搜狗/Bing/通用搜索无互动数据，不写入。前端按来源展示主指标与详情分项。
+
 ### 3.2 关键词 → 搜索词映射
 
 - `Keyword.searchQueries` 字段缓存英文搜索词（JSON 数组）
@@ -85,7 +87,7 @@
 
 | 概念 | 字段 | 公式 | 用途 |
 |------|------|------|------|
-| **热力值** heatIndex | 0-100 | 源内归一化（排名/互动） | 阈值判定、热力条 |
+| **热力值** heatIndex | 0-100 | 源内归一化（排名/互动） | 分级阈值判定（行内不再展示，详情页保留） |
 | **热度值** heatScore | 0~数千无界 | 见下 | 排序、跨源对比、增速 |
 
 **热度值公式：**
@@ -143,20 +145,23 @@ Stage 1: 关键词相关性判定（GATE）     ← deepseek-flash
   批量 12 条/批 × 并发 2 路
   不相关 → deleteMany（容错并发删除）
   AI 失败 → retried（留待下轮，不误删）
+  输出: relevant + matchedKeyword + confidence + reason（15-25 字理由）
       │
       ▼
 Stage 2: 内容验证 verify（仅可能入榜） ← deepseek-flash
   needsVerify = 热力值≥80 或 预估增速≥30
-  输出: classification（含 rumor_unverified）+ isActionable
-  → 派生 isRumor / aiVerified
+  输出: isVerified / isRumor / isActionable（三个布尔，省 token）
+  → 写入 isRumor / isActionable / aiVerified
       │
       ▼
 Stage 3: 定级 classifyTiers          ← 本地计算（无 AI）
   热度值增速 + 热力值 → burst/hot/rising（全量重算）
       │
       ▼
-保存 + 广播 + 告警
+保存（含互动明细/理由/置信度）+ 广播 + 告警
 ```
+
+**扫描进度（v3.2）**：`scheduler` 维护全局 `CrawlStatus`（running/phase/progress/currentSource/topicsFound），爬取阶段按来源数 0→80%，AI 阶段按批次 82→98%，完成置 100%；通过 `GET /api/v1/crawl/status` 与 Socket `crawl_status` 推送。
 
 ### 5.3 AI 健壮性（关键修复）
 
@@ -208,15 +213,19 @@ model Topic {
   heatIndex       Float    @default(0)      // 热力值 0-100
   heatScore       Float?                    // 热度值（无界，√压缩/×15）
   prevHeatScore   Float?                    // 初始观测（增速基准，首次写入）
-  rawHeat         Float?
+  rawHeat         Float?                    // 已停写，待删列
   growthRate      Float?                    // (当前−初始)/初始 ×100
   velocityScore   Float?
   aiVerified      Int      @default(0)
   isRumor         Boolean?                  // 疑似谣言标记
-  aiSummary       String?
-  aiCategory      String?
+  isActionable    Boolean?                  // AI 判定值得关注
+  matchReason     String?                   // AI 匹配理由（15-25 字）
+  matchConfidence Float?                    // AI 匹配置信度 0-1
+  engagement      String?                   // 互动明细 JSON（views/comments/points...）
+  aiSummary       String?                   // 已停写，待删列
+  aiCategory      String?                   // 已停写，待删列
   tier            String?                   // burst | hot | rising | null
-  matchedKeyword  String?                   // 关联关键词
+  matchedKeyword  String?                   // 关联关键词（兼作 category 过滤字段）
   publishedAt     DateTime?                 // 原始发布时间（B站/36氪/HN 可采集，可空）
   recommendScore  Float?                    // 综合推荐分（级别权重+增速+热度+新鲜度）
   mentionCount    Int      @default(1)
@@ -248,6 +257,7 @@ model Alert {
 | add_published_at_and_recommend_score | Topic.publishedAt / recommendScore + 索引 |
 | backfill_recommend_score | 存量话题回填综合推荐分 |
 | fix_backfill_recommend_score | 修正回填（epoch 毫秒新鲜度计算） |
+| add_topic_engagement_signals | Topic.matchReason / matchConfidence / engagement / isActionable |
 
 ---
 
@@ -276,6 +286,10 @@ model Alert {
 
 系统
   POST        /api/v1/crawl/trigger       # 手动触发（running 锁，进行中返回 409）
+  GET         /api/v1/crawl/status        # 扫描进度（running/phase/progress/当前来源/条数）
+
+Socket 事件
+  new_topic / alert / source_status / crawl_status（扫描进度实时推送）
 
 Agent
   GET         /api/v1/agent/search|trending|status
@@ -290,9 +304,10 @@ Agent
 
 | 路径 | 页面 | 要点 |
 |------|------|------|
-| `/` | DashboardPage | KPI行（7天活跃口径，可点击跳转筛选）+ 实时话题网格（heatScore 降序，7天窗口） |
-| `/topics` | TopicsPage | 筛选（发现时间范围/关键词多选/来源多选/级别）+ 排序（综合推荐/热度值/增速/热力值/连续上榜/最新发布/最新发现）+ 分页 + URL同步；发布/发现时间、#关键词与谣言徽章 |
-| `/topics/:id` | TopicDetailPage | 渐变面积趋势图 + 级别徽章 + #关键词 + ⚠️谣言标记 + 热度值/热力值/增速 + 发布时间 |
+| `/` | DashboardPage | KPI行（7天活跃口径，可点击跳转筛选）+ 实时话题列表（TopicRow 一行一话题，heatScore 降序，7天窗口） |
+| `/topics` | TopicsPage | 筛选（发现时间范围/关键词多选/来源多选/级别）+ 排序（综合推荐/热度值/增速/热力值/连续上榜/最新发布/最新发现）+ 分页 + URL同步；TopicRow：榜单排名/互动量/AI 理由展开/热度值/增速 |
+| `/topics/:id` | TopicDetailPage | 渐变面积趋势图 + 级别徽章 + #关键词 + 谣言/值得关注标记 + AI 相关性分析（理由+置信度）+ 互动数据分项 + 热度值/热力值/增速 + 发布时间 |
+| 全局（所有页面） | ScanStatusBar | 顶部扫描进度条：百分比 + 阶段 + 当前来源 + 已发现条数；扫描完成短暂提示 |
 | `/keywords` | KeywordsPage | CRUD + 暂停/激活 |
 | `/sources` | SourcesPage | 源健康 |
 | `/settings` | SettingsPage | 配置 |
@@ -302,8 +317,13 @@ Agent
 | 术语 | 对应 | 展示 |
 |------|------|------|
 | 热度值 | heatScore | 千分位/万格式化（1,275 / 1.2万） |
-| 热力值 | heatIndex | 0-100 数字 + 热力条 |
+| 热力值 | heatIndex | 0-100；分级阈值与详情页指标，话题行内不再展示 |
+| 增速 | velocityScore | 话题行与热度值同字号大字显示，正负着色 |
 | 综合推荐 | recommendScore | 默认排序：级别权重+增速+热度+新鲜度 |
+| 相关性理由/置信度 | matchReason / matchConfidence | 列表默认收起理由、点击展开；置信度常驻 |
+| 互动数据 | engagement | 微博热度/标签、百度搜索指数、B站播放弹幕评论收藏点赞、HN 分数评论 |
+| 榜单排名 | sourceRank | 微博/百度/B站热榜前 10 显示 `#N 来源` |
+| 值得关注 | isActionable | AI 判定可行动性，展示「值得关注」徽标 |
 | 发布时间 | publishedAt | 原始发布时间（B站/36氪/HN；未知显示 —） |
 | 发现时间 | firstSeenAt | 首次被系统抓取/发现的时间 |
 | 最新发现 | lastSeenAt | 最近一次被抓取的时间（排序用） |
@@ -319,7 +339,7 @@ src/
 │   ├── index.ts               # Express + 路由 + 手动触发
 │   ├── socket.ts / db.ts
 │   ├── crawlers/
-│   │   ├── scheduler.ts       # 调度 + running 锁 + 衰减 + 内容过滤入口
+│   │   ├── scheduler.ts       # 调度 + running 锁 + 衰减 + 内容过滤入口 + 扫描进度状态
 │   │   ├── content-filter.ts  # 低价值规则过滤（v3 新增）
 │   │   ├── keyword-queries.ts # 关键词→英文搜索词（v3 新增）
 │   │   ├── hacker-news.ts     # HN 源（v3 新增）
@@ -332,22 +352,23 @@ src/
 │   └── notifications/         # browser.ts / email.ts
 ├── client/src/
 │   ├── pages/                 # 6 页面
-│   ├── components/            # KpiRow/VelocityGrid/TopicDetailChart 等
+│   ├── components/            # KpiRow/TopicRow/ScanStatusBar/VelocityGrid/TopicDetailChart 等
+│   ├── utils/format.ts        # 热度/互动量格式化 + 按来源主指标/分项
 │   └── hooks/                 # useApi / useSocket
 └── shared/types.ts
 ```
 
 ---
 
-## 11. 关键设计决策（v3.1）
+## 11. 关键设计决策（v3.2）
 
 1. **got + cheerio 而非 axios**：功能等价、内置重试/超时，保持现有稳定实现
-2. **双热度体系**：热力值（0-100 展示/阈值）+ 热度值（无界真实量级）分离，避免归一化抹平量级
+2. **双热度体系**：热力值（0-100 阈值/详情页）+ 热度值（无界真实量级）分离，避免归一化抹平量级
 3. **√ 压缩热度值**：范围紧凑（几千封顶）且保留 10 倍量级差异；代理源线性 ×15（用户指定）
 4. **增速用初始值基准**：对比首观，不受衰减干扰，简单可解释
 5. **批量 + 并发 + 超时**：管线 22 分钟 → 5-10 分钟，AI 失败不误删
 6. **规则过滤前置**：零成本拦截百科/官网/教程，减少 AI 调用与列表噪音
-7. **verify 精简且子集化**：保留营销/谣言识别，移除摘要/分类（省时）
+7. **verify 精简且子集化**：仅对可能入榜话题调用，输出收敛为 isVerified/isRumor/isActionable 三个布尔（省 token、提速且语义等价）
 8. **`tsx watch < NUL`**：解决 Windows 下 concurrently 无 TTY 挂起（stdin 空设备）
 9. **手动触发与定时器共享 running 锁**：杜绝并发管线数据竞争
 10. **综合推荐分（recommendScore）**：级别权重 + 增速 + 热度 + 新鲜度，作为默认排序，让"正在爆发/上升"的话题优先于死热度霸榜
@@ -356,3 +377,9 @@ src/
 13. **排序白名单**：topics 排序字段白名单校验，杜绝非法字段注入导致 500
 14. **36氪 RSS 兜底可达**：JSON API 任意失败（含解析失败）都会降级 RSS，避免整源空手而归
 15. **UI UX Pro Max 设计系统**：深色金融仪表盘风格（Space Grotesk + 绿青渐变 + 玻璃拟态），SVG 图标替换 emoji，KPI 数字动画与渐变面积图
+16. **AI 输出最小化**：相关性输出增加 reason 字段（成本可忽略），verify 删除 classification/confidence（从未落库），管线响应更短更快
+17. **互动明细结构化**：`engagement` JSON 保留平台原生指标（展示与热度计算解耦），rawHeat 加权汇总停止写入
+18. **一行一话题 TopicRow**：全宽行 + 可扫读布局，理由默认收起、展开查看，降低信息密度换取判断效率
+19. **扫描状态可观测**：内存级 CrawlStatus + REST 轮询 + Socket 推送；进度 = 爬取 0-80% + AI 82-98% + 完成 100%
+20. **废弃字段先停写后删列**：aiSummary/aiCategory/rawHeat 停止写入并从 API 移除，列保留待后续 migration 删除
+21. **榜单排名防误导**：仅微博/百度/B站热榜前 10 显示 #N，搜索/快讯源的序号不当作排名展示

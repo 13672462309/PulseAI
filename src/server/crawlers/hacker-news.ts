@@ -1,6 +1,6 @@
 import got from 'got';
 import prisma from '../db.js';
-import { calcHeatScore } from './utils.js';
+import { calcHeatScore, type CrawlerItem } from './utils.js';
 import { getSearchQueries } from './keyword-queries.js';
 
 // HN scores are small (points/comments in the hundreds) — scale up to
@@ -25,7 +25,7 @@ interface HNResponse {
  * Hacker News keyword search via hn.algolia.com.
  * Queries each active keyword (first English query term), returns recent stories.
  */
-export async function crawlHackerNews(): Promise<Array<{ title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null; publishedAt?: number | string | Date | null }>> {
+export async function crawlHackerNews(): Promise<CrawlerItem[]> {
   const keywords = await prisma.keyword.findMany({ where: { isActive: true }, select: { keyword: true } });
   if (!keywords.length) return [];
 
@@ -73,7 +73,7 @@ export async function crawlHackerNews(): Promise<Array<{ title: string; url: str
       rank: i + 1,
       heatIndex: Math.round((score / maxEngagement) * 100),
       heatScore: calcHeatScore(score * HN_ENGAGEMENT_MULTIPLIER),
-      rawHeat: score,
+      engagement: { points: hit.points, comments: hit.num_comments },
       publishedAt: hit.created_at,
     };
   }).slice(0, 60);

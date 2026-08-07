@@ -1,7 +1,33 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../db.js';
+import type { Engagement } from '../../shared/types.js';
 
 export const topicsRouter = Router();
+
+export function parseEngagementJson(raw: unknown): Engagement | null {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw as Engagement;
+  if (typeof raw === 'string') {
+    try {
+      const v = JSON.parse(raw);
+      return v && typeof v === 'object' ? v : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+// Strip legacy fields no longer written (aiSummary/aiCategory/rawHeat) and
+// parse the stored engagement JSON so the API exposes a plain object.
+function serializeTopic(topic: any) {
+  const out = { ...topic };
+  delete out.aiSummary;
+  delete out.aiCategory;
+  delete out.rawHeat;
+  out.engagement = parseEngagementJson(out.engagement);
+  return out;
+}
 
 // Whitelist of sortable fields — arbitrary field injection into Prisma orderBy
 // would 500 on unknown columns, so only these are accepted.
@@ -36,7 +62,7 @@ topicsRouter.get('/', async (req: Request, res: Response) => {
       where.aiVerified = parseInt(verified as string);
     }
     if (category) {
-      where.aiCategory = category as string;
+      where.matchedKeyword = category as string;
     }
     if (source) {
       const sourceId = parseInt(source as string);
@@ -52,7 +78,7 @@ topicsRouter.get('/', async (req: Request, res: Response) => {
     if (keyword) {
       where.OR = [
         { title: { contains: keyword as string } },
-        { aiSummary: { contains: keyword as string } },
+        { matchedKeyword: { contains: keyword as string } },
       ];
     }
     if (keywords) {
@@ -90,7 +116,7 @@ topicsRouter.get('/', async (req: Request, res: Response) => {
       prisma.topic.count({ where }),
     ]);
 
-    res.json({ data: topics, total, page: safePage, limit: safeLimit });
+    res.json({ data: topics.map(serializeTopic), total, page: safePage, limit: safeLimit });
   } catch (err) {
     console.error('Failed to fetch topics:', err);
     res.status(500).json({ error: 'Failed to fetch topics' });
@@ -161,7 +187,7 @@ topicsRouter.get('/trending', async (req: Request, res: Response) => {
       take: limit,
       include: { source: { select: { name: true, slug: true } } },
     });
-    res.json(topics);
+    res.json(topics.map(serializeTopic));
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch trending topics' });
   }
@@ -180,7 +206,7 @@ topicsRouter.get('/hot', async (req: Request, res: Response) => {
       take: limit,
       include: { source: { select: { name: true, slug: true } } },
     });
-    res.json(topics);
+    res.json(topics.map(serializeTopic));
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch hot topics' });
   }
@@ -198,7 +224,7 @@ topicsRouter.get('/:id', async (req: Request, res: Response) => {
       },
     });
     if (!topic) return res.status(404).json({ error: 'Topic not found' });
-    res.json(topic);
+    res.json(serializeTopic(topic));
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch topic' });
   }

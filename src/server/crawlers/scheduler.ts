@@ -10,19 +10,12 @@ import { crawlSogou } from './sogou.js';
 import { crawlHackerNews } from './hacker-news.js';
 import { ensureAllSearchQueries } from './keyword-queries.js';
 import { isLowValueContent } from './content-filter.js';
-import { normalizeTitle } from './utils.js';
-import { broadcastNewTopic, broadcastSourceStatus } from '../socket.js';
+import { normalizeTitle, type CrawlerItem } from './utils.js';
+import { broadcastNewTopic, broadcastSourceStatus, broadcastCrawlStatus } from '../socket.js';
 import { runAiPipeline } from '../ai/pipeline.js';
+import type { CrawlStatus } from '../../shared/types.js';
 
-type CrawlerFn = () => Promise<Array<{
-  title: string;
-  url: string;
-  rank: number;
-  heatIndex: number;
-  heatScore: number | null;
-  rawHeat: number | null;
-  publishedAt?: number | string | Date | null;
-}>>;
+type CrawlerFn = () => Promise<CrawlerItem[]>;
 
 // Heat decay: half-life of 24h — mega-hits cool down naturally instead of dominating forever
 const HEAT_HALF_LIFE_HOURS = 24;
@@ -45,34 +38,89 @@ const RETRY_BACKOFF_BASE = 60000; // 1 min base
 let running = false;
 let timer: ReturnType<typeof setInterval> | null = null;
 
+let crawlStatus: CrawlStatus = {
+  running: false,
+  phase: 'idle',
+  progress: 0,
+  currentSource: null,
+  sourcesDone: 0,
+  sourcesTotal: 0,
+  topicsFound: 0,
+  startedAt: null,
+  updatedAt: null,
+};
+
+export function getCrawlStatus(): CrawlStatus {
+  return { ...crawlStatus };
+}
+
+function updateCrawlStatus(patch: Partial<CrawlStatus>): void {
+  crawlStatus = { ...crawlStatus, ...patch, updatedAt: new Date().toISOString() };
+  broadcastCrawlStatus(getCrawlStatus());
+}
+
 export async function crawlAllSources(): Promise<number> {
-  // Decay existing heat scores before the new crawl (24h half-life)
-  await decayHeatScores().catch((err) => console.error('[Scheduler] Heat decay error:', err));
+  updateCrawlStatus({
+    running: true,
+    phase: 'crawling',
+    progress: 0,
+    currentSource: null,
+    sourcesDone: 0,
+    sourcesTotal: 0,
+    topicsFound: 0,
+    startedAt: new Date().toISOString(),
+  });
 
-  const sources = await prisma.source.findMany({ where: { isActive: true } });
-  let totalTopics = 0;
+  try {
+    // Decay existing heat scores before the new crawl (24h half-life)
+    await decayHeatScores().catch((err) => console.error('[Scheduler] Heat decay error:', err));
 
-  for (const source of sources) {
-    try {
-      const count = await crawlSource(source);
-      totalTopics += count;
-      // Stagger: 2-second gap between sources
-      await sleep(2000);
-    } catch (err) {
-      console.error(`[Scheduler] Error crawling ${source.slug}:`, err);
+    const sources = await prisma.source.findMany({ where: { isActive: true } });
+    updateCrawlStatus({ sourcesTotal: sources.length });
+    let totalTopics = 0;
+
+    for (const source of sources) {
+      updateCrawlStatus({ currentSource: source.name });
+      try {
+        const count = await crawlSource(source);
+        totalTopics += count;
+        const done = crawlStatus.sourcesDone + 1;
+        updateCrawlStatus({
+          sourcesDone: done,
+          topicsFound: totalTopics,
+          progress: Math.round((done / Math.max(sources.length, 1)) * 80),
+        });
+        // Stagger: 2-second gap between sources
+        await sleep(2000);
+      } catch (err) {
+        console.error(`[Scheduler] Error crawling ${source.slug}:`, err);
+      }
     }
-  }
 
-  // After all sources crawled, run AI pipeline
-  if (totalTopics > 0) {
-    try {
-      await runAiPipeline();
-    } catch (err) {
-      console.error('[Scheduler] AI pipeline error:', err);
+    // After all sources crawled, run AI pipeline
+    if (totalTopics > 0) {
+      updateCrawlStatus({ phase: 'ai', progress: 82, currentSource: null });
+      try {
+        await runAiPipeline((aiProgress) => {
+          updateCrawlStatus({ progress: Math.min(98, 82 + Math.round(aiProgress * 0.16)) });
+        });
+      } catch (err) {
+        console.error('[Scheduler] AI pipeline error:', err);
+      }
     }
-  }
 
-  return totalTopics;
+    updateCrawlStatus({
+      running: false,
+      phase: 'idle',
+      progress: 100,
+      currentSource: null,
+      sourcesDone: sources.length,
+    });
+    return totalTopics;
+  } catch (err) {
+    updateCrawlStatus({ running: false, phase: 'idle', progress: 100, currentSource: null });
+    throw err;
+  }
 }
 
 async function crawlSource(source: Source): Promise<number> {
@@ -157,7 +205,7 @@ async function crawlSource(source: Source): Promise<number> {
 }
 
 async function saveTopic(
-  raw: { title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null; publishedAt?: number | string | Date | null },
+  raw: CrawlerItem,
   sourceId: number
 ): Promise<void> {
   const normalizedTitle = normalizeTitle(raw.title);
@@ -192,6 +240,7 @@ async function saveTopic(
         ...(raw.heatScore != null && existing.prevHeatScore == null ? { prevHeatScore: raw.heatScore } : {}),
         // Keep the original publish time if the source provides one (never overwrite with null)
         ...(raw.publishedAt != null ? { publishedAt: toDate(raw.publishedAt) } : {}),
+        engagement: raw.engagement ? JSON.stringify(raw.engagement) : null,
         growthRate,
         lastSeenAt: new Date(),
         mentionCount: { increment: 1 },
@@ -221,7 +270,7 @@ async function saveTopic(
         heatIndex: raw.heatIndex,
         heatScore: raw.heatScore,
         prevHeatScore: raw.heatScore, // first observation becomes the growth baseline
-        rawHeat: raw.rawHeat,
+        engagement: raw.engagement ? JSON.stringify(raw.engagement) : null,
         publishedAt: toDate(raw.publishedAt),
         firstSeenAt: new Date(),
         lastSeenAt: new Date(),
@@ -238,13 +287,15 @@ async function saveTopic(
       sourceRank: topic.sourceRank,
       url: topic.url,
       heatIndex: topic.heatIndex,
-      rawHeat: topic.rawHeat,
       growthRate: null,
       velocityScore: null,
       publishedAt: topic.publishedAt?.toISOString() ?? null,
       aiVerified: 0,
-      aiSummary: null,
-      aiCategory: null,
+      isRumor: null,
+      matchReason: null,
+      matchConfidence: null,
+      isActionable: null,
+      engagement: topic.engagement ? JSON.parse(topic.engagement) : null,
       firstSeenAt: topic.firstSeenAt.toISOString(),
       lastSeenAt: topic.lastSeenAt.toISOString(),
       peakHeat: topic.peakHeat,

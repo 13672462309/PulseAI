@@ -1,12 +1,12 @@
 import * as cheerio from 'cheerio';
 import got from 'got';
 import prisma from '../db.js';
-import { calcProxyHeatScore, randomUA } from './utils.js';
+import { calcProxyHeatScore, randomUA, type CrawlerItem } from './utils.js';
 
 const CAPTCHA_MARKERS = ['验证码', 'antispider', '请输入上图中', '安全验证'];
 
-export async function crawlSogou(): Promise<Array<{ title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null }>> {
-  const results: Array<{ title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null }> = [];
+export async function crawlSogou(): Promise<CrawlerItem[]> {
+  const results: CrawlerItem[] = [];
 
   // ── Channel 1: hot words list ──
   try {
@@ -32,7 +32,6 @@ export async function crawlSogou(): Promise<Array<{ title: string; url: string; 
           rank: i + 1,
           heatIndex,
           heatScore: calcProxyHeatScore(heatIndex),
-          rawHeat: null,
         });
       }
     }
@@ -81,7 +80,6 @@ export async function crawlSogou(): Promise<Array<{ title: string; url: string; 
             rank: 31 + i,
             heatIndex,
             heatScore: calcProxyHeatScore(heatIndex),
-            rawHeat: null,
           });
         }
         await sleep(600); // sogou rate-limits aggressively

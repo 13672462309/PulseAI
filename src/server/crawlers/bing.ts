@@ -1,18 +1,18 @@
 import * as cheerio from 'cheerio';
 import got from 'got';
 import prisma from '../db.js';
-import { calcProxyHeatScore, randomUA } from './utils.js';
+import { calcProxyHeatScore, randomUA, type CrawlerItem } from './utils.js';
 
 /**
  * Bing web search. Queries EVERY active keyword each round —
  * previously only the first keyword was searched (findFirst), so
  * keywords after the first were never covered.
  */
-export async function crawlBing(): Promise<Array<{ title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null }>> {
+export async function crawlBing(): Promise<CrawlerItem[]> {
   const keywords = await prisma.keyword.findMany({ where: { isActive: true }, select: { keyword: true } });
   const searchTerms = keywords.length > 0 ? keywords.map(k => k.keyword) : ['AI 热点'];
 
-  const items: Array<{ title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null }> = [];
+  const items: CrawlerItem[] = [];
   const seen = new Set<string>();
   let allFailed = true;
 
@@ -50,7 +50,6 @@ export async function crawlBing(): Promise<Array<{ title: string; url: string; r
           rank: items.length + 1,
           heatIndex,
           heatScore: calcProxyHeatScore(heatIndex),
-          rawHeat: null,
         });
       }
 

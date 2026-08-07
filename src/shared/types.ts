@@ -1,13 +1,5 @@
 // ── 爬取相关 ──
-export interface RawTopic {
-  sourceId: number;
-  sourceRank: number;
-  title: string;
-  url: string;
-  heatIndex: number;
-  rawHeat: number | null;
-  fetchedAt: number;
-}
+export type Engagement = Record<string, number | string | null>;
 
 // ── API 请求/响应 ──
 export interface PaginatedResponse<T> {
@@ -25,6 +17,18 @@ export interface StatsResponse {
   sourcesTotal: number;
 }
 
+export interface CrawlStatus {
+  running: boolean;
+  phase: 'crawling' | 'ai' | 'idle';
+  progress: number;
+  currentSource: string | null;
+  sourcesDone: number;
+  sourcesTotal: number;
+  topicsFound: number;
+  startedAt: string | null;
+  updatedAt: string | null;
+}
+
 export interface KeywordInput {
   keyword: string;
   category?: string;
@@ -40,6 +44,7 @@ export interface SocketEvents {
   new_topic: (topic: TopicSummary) => void;
   alert: (alert: AlertSummary) => void;
   source_status: (data: { sourceId: number; status: string }) => void;
+  crawl_status: (status: CrawlStatus) => void;
   subscribe_category: (category: string) => void;
   subscribe_keyword: (keywordId: number) => void;
 }
@@ -53,14 +58,16 @@ export interface TopicSummary {
   sourceRank: number | null;
   url: string | null;
   heatIndex: number;
-  rawHeat: number | null;
   growthRate: number | null;
   velocityScore: number | null;
   aiVerified: number;
-  aiSummary: string | null;
-  aiCategory: string | null;
+  isRumor: boolean | null;
+  isActionable: boolean | null;
   tier: string | null;
   matchedKeyword: string | null;
+  matchReason: string | null;
+  matchConfidence: number | null;
+  engagement?: Engagement | null;
   firstSeenAt: string;
   lastSeenAt: string;
   publishedAt?: string | null;

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../db.js';
 import type { AgentSearchResult, TopicSummary } from '../../shared/types.js';
+import { parseEngagementJson } from './topics.js';
 
 export const agentRouter = Router();
 
@@ -24,8 +25,7 @@ agentRouter.get('/search', async (req: Request, res: Response) => {
       where: {
         OR: [
           { title: { contains: query.trim() } },
-          { aiSummary: { contains: query.trim() } },
-          { aiCategory: query.trim() },
+          { matchedKeyword: { contains: query.trim() } },
         ],
         aiVerified: 1,
         lastSeenAt: { gte: new Date(Date.now() - 24 * 3600_000) },
@@ -45,14 +45,16 @@ agentRouter.get('/search', async (req: Request, res: Response) => {
         sourceRank: t.sourceRank,
         url: t.url,
         heatIndex: t.heatIndex,
-        rawHeat: t.rawHeat,
         growthRate: t.growthRate,
         velocityScore: t.velocityScore,
         aiVerified: t.aiVerified,
-        aiSummary: t.aiSummary,
-        aiCategory: t.aiCategory,
+        isRumor: t.isRumor,
+        isActionable: t.isActionable,
         tier: t.tier,
         matchedKeyword: t.matchedKeyword,
+        matchReason: t.matchReason,
+        matchConfidence: t.matchConfidence,
+        engagement: parseEngagementJson(t.engagement),
         firstSeenAt: t.firstSeenAt.toISOString(),
         lastSeenAt: t.lastSeenAt.toISOString(),
         publishedAt: t.publishedAt?.toISOString() ?? null,
@@ -80,7 +82,7 @@ agentRouter.get('/trending', async (req: Request, res: Response) => {
       velocityScore: { not: null },
       lastSeenAt: { gte: new Date(Date.now() - 24 * 3600_000) },
     };
-    if (category) where.aiCategory = category;
+    if (category) where.matchedKeyword = category;
 
     const topics = await prisma.topic.findMany({
       where,

@@ -1,18 +1,18 @@
 import * as cheerio from 'cheerio';
 import got from 'got';
 import prisma from '../db.js';
-import { calcProxyHeatScore, randomUA } from './utils.js';
+import { calcProxyHeatScore, randomUA, type CrawlerItem } from './utils.js';
 
 /**
  * General web search (Bing). Queries EVERY active keyword each round —
  * previously only one keyword per 30min was searched, which starved
  * less-recently-picked keywords (e.g. deepseek only once per 6.5h).
  */
-export async function crawlWebSearch(): Promise<Array<{ title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null }>> {
+export async function crawlWebSearch(): Promise<CrawlerItem[]> {
   const keywords = await prisma.keyword.findMany({ where: { isActive: true }, select: { keyword: true } });
   const searchTerms = keywords.length > 0 ? keywords.map(k => k.keyword) : ['AI 大模型'];
 
-  const items: Array<{ title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null }> = [];
+  const items: CrawlerItem[] = [];
   const seen = new Set<string>();
   let allFailed = true;
 
@@ -65,7 +65,6 @@ export async function crawlWebSearch(): Promise<Array<{ title: string; url: stri
           rank: items.length + 1,
           heatIndex,
           heatScore: calcProxyHeatScore(heatIndex),
-          rawHeat: null,
         });
       }
 

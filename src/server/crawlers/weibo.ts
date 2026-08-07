@@ -1,5 +1,5 @@
 import got from 'got';
-import { calcHeatScore, randomUA } from './utils.js';
+import { calcHeatScore, randomUA, type CrawlerItem } from './utils.js';
 
 interface WeiboItem {
   realpos: number;
@@ -15,7 +15,7 @@ interface WeiboResponse {
   };
 }
 
-export async function crawlWeibo(): Promise<Array<{ title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null }>> {
+export async function crawlWeibo(): Promise<CrawlerItem[]> {
   try {
     const resp = await got('https://weibo.com/ajax/side/hotSearch', {
       headers: {
@@ -38,7 +38,7 @@ export async function crawlWeibo(): Promise<Array<{ title: string; url: string; 
         rank: item.realpos || i + 1,
         heatIndex: Math.round((rawHeat / maxHeat) * 100),
         heatScore: rawHeat ? calcHeatScore(rawHeat) : null,
-        rawHeat: rawHeat || null,
+        engagement: rawHeat ? { hot: rawHeat, tag: item.icon_desc ?? null } : null,
       };
     }).filter(t => t.title);
   } catch (err) {

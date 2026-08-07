@@ -1,22 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
 import { useApi } from '../hooks/useApi.js';
 import { Icon } from '../components/icons.js';
-
-interface T {
-  id: number;
-  title: string;
-  heatIndex: number;
-  heatScore: number | null;
-  velocityScore: number | null;
-  matchedKeyword: string | null;
-  isRumor: boolean | null;
-  firstSeenAt: string;
-  lastSeenAt: string;
-  publishedAt?: string | null;
-  mentionCount: number;
-  source?: { name?: string; slug?: string };
-}
+import { TopicRow, type TopicRowData } from '../components/TopicRow.js';
 
 interface KeywordOption { value: string; label: string; count: number; }
 interface SourceOption { id: number; name: string; slug: string; count: number; }
@@ -39,19 +25,6 @@ const TIME_RANGES = [
   { v: '24h', l: '最近24小时' },
   { v: '7d', l: '最近7天' },
 ];
-
-function formatHeat(score: number): string {
-  if (score >= 10000) return (score / 10000).toFixed(1) + '万';
-  return score.toLocaleString();
-}
-
-function formatTime(iso?: string | null): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 function sinceIso(range: string): string {
   const hours = range === '1h' ? 1 : range === '6h' ? 6 : range === '24h' ? 24 : range === '7d' ? 168 : 0;
@@ -112,7 +85,7 @@ export function TopicsPage() {
     return `/api/v1/topics?${p}`;
   }, [q, sort, tier, since, keywords, sources, page]);
 
-  const { data } = useApi<{ data: T[]; total: number }>(url);
+  const { data } = useApi<{ data: TopicRowData[]; total: number }>(url);
   const topics = data?.data || [];
   const total = data?.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / 30));
@@ -202,27 +175,7 @@ export function TopicsPage() {
 
       <div className="space-y-1">
         {topics.map(t => (
-          <Link key={t.id} to={`/topics/${t.id}`} className="card p-4 flex items-center gap-5 no-underline group hover:border-brand/20">
-            <div className="flex-1 min-w-0">
-              <p className="text-[14px] font-medium text-text-primary truncate group-hover:text-brand transition-colors">{t.title}</p>
-              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                {t.matchedKeyword && <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-brand-soft text-brand font-mono font-medium">#{t.matchedKeyword}</span>}
-                {t.isRumor === true && <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-danger/10 text-danger font-mono font-semibold"><Icon name="alert-triangle" className="w-3 h-3" /> 疑似谣言</span>}
-                {t.isRumor === false && <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-positive/10 text-positive font-mono"><Icon name="check-circle" className="w-3 h-3" /> 不是谣言</span>}
-                <span className="text-[10px] text-text-muted">{t.source?.name}</span>
-                <span className={`text-[10px] font-mono font-semibold ${(t.velocityScore ?? 0) > 0 ? 'text-positive' : (t.velocityScore ?? 0) < 0 ? 'text-danger' : 'text-text-muted'}`}>{(t.velocityScore ?? 0) > 0 ? '+' : ''}{(t.velocityScore ?? 0).toFixed(0)}</span>
-              </div>
-              <div className="flex items-center gap-3 mt-1 text-[10px] text-text-muted font-mono">
-                <span className="inline-flex items-center gap-1"><Icon name="clock" className="w-3 h-3" /> 发布 {formatTime(t.publishedAt) || '—'}</span>
-                <span className="inline-flex items-center gap-1"><Icon name="radar" className="w-3 h-3" /> 发现 {formatTime(t.firstSeenAt)}</span>
-                <span className="opacity-60" title="同一来源连续多轮采集到该话题的次数">连续上榜 {t.mentionCount} 次</span>
-              </div>
-            </div>
-            <div className="text-right flex-shrink-0">
-              <span className="text-xl font-heading font-extrabold text-positive tabular-nums">{t.heatScore != null ? formatHeat(t.heatScore) : t.heatIndex.toFixed(0)}</span>
-              <span className="block text-[10px] text-text-muted font-mono">热度值</span>
-            </div>
-          </Link>
+          <TopicRow key={t.id} topic={t} />
         ))}
         {!topics.length && !data && (
           <div className="card p-10 text-center">

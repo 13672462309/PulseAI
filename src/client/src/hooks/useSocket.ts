@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import type { TopicSummary, AlertSummary } from '@shared/types.js';
+import type { TopicSummary, AlertSummary, CrawlStatus } from '@shared/types.js';
 
 const SOCKET_URL = '/'; // Vite proxy handles routing to backend
 
@@ -60,17 +60,22 @@ export function useSocket() {
 
   const onNewTopic = useCallback((handler: (topic: TopicSummary) => void) => {
     socketRef.current.on('new_topic', handler);
-    return () => socketRef.current.off('new_topic', handler);
+    return () => { socketRef.current.off('new_topic', handler); };
   }, []);
 
   const onAlert = useCallback((handler: (alert: AlertSummary) => void) => {
     socketRef.current.on('alert', handler);
-    return () => socketRef.current.off('alert', handler);
+    return () => { socketRef.current.off('alert', handler); };
   }, []);
 
   const onSourceStatus = useCallback((handler: (data: { sourceId: number; status: string }) => void) => {
     socketRef.current.on('source_status', handler);
-    return () => socketRef.current.off('source_status', handler);
+    return () => { socketRef.current.off('source_status', handler); };
+  }, []);
+
+  const onCrawlStatus = useCallback((handler: (status: CrawlStatus) => void) => {
+    socketRef.current.on('crawl_status', handler);
+    return () => { socketRef.current.off('crawl_status', handler); };
   }, []);
 
   return {
@@ -82,5 +87,6 @@ export function useSocket() {
     onNewTopic,
     onAlert,
     onSourceStatus,
+    onCrawlStatus,
   };
 }

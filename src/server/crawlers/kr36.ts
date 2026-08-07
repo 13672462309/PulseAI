@@ -1,5 +1,5 @@
 import got from 'got';
-import { calcProxyHeatScore, randomUA } from './utils.js';
+import { calcProxyHeatScore, randomUA, type CrawlerItem } from './utils.js';
 
 // Parse RSS-like JSON feed from 36Kr
 interface Kr36Item {
@@ -11,7 +11,7 @@ interface Kr36Item {
   summary?: string;
 }
 
-export async function crawl36Kr(): Promise<Array<{ title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null; publishedAt?: number | string | Date | null }>> {
+export async function crawl36Kr(): Promise<CrawlerItem[]> {
   // Channel 1: quick-news JSON API. Any failure (blocked page, parse error,
   // empty payload) falls through to the RSS channel instead of dropping the source.
   try {
@@ -34,7 +34,6 @@ export async function crawl36Kr(): Promise<Array<{ title: string; url: string; r
           rank: i + 1,
           heatIndex,
           heatScore: calcProxyHeatScore(heatIndex),
-          rawHeat: item.total_words || null,
           publishedAt: item.published_at || null,
         };
       });
@@ -51,7 +50,7 @@ export async function crawl36Kr(): Promise<Array<{ title: string; url: string; r
       timeout: { request: 10000 },
     }).text();
 
-    const items: Array<{ title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null; publishedAt?: number | string | Date | null }> = [];
+    const items: CrawlerItem[] = [];
     const titleMatches = rssResp.matchAll(/<title>(.+?)<\/title>/g);
     const linkMatches = rssResp.matchAll(/<link>(.+?)<\/link>/g);
     const pubDateMatches = rssResp.matchAll(/<pubDate>(.+?)<\/pubDate>/g);
@@ -68,7 +67,6 @@ export async function crawl36Kr(): Promise<Array<{ title: string; url: string; r
         rank: i + 1,
         heatIndex,
         heatScore: calcProxyHeatScore(heatIndex),
-        rawHeat: null,
         publishedAt: pubDates[i] || null,
       });
     });

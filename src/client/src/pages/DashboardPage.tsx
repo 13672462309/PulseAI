@@ -12,7 +12,7 @@ export function DashboardPage() {
     setCrawling(true); setMsg(null);
     try {
       const r = await apiFetch<{ topicsFound: number }>('/api/v1/crawl/trigger', { method: 'POST' });
-      setMsg(`${r.topicsFound} 条数据已采集，AI 分析中`);
+      setMsg(`扫描完成：本轮采集 ${r.topicsFound} 条，正在刷新数据...`);
       setTimeout(() => { setMsg(null); window.location.reload(); }, 6000);
     } catch (e: any) { setMsg(`错误: ${e.message}`); }
     finally { setCrawling(false); }

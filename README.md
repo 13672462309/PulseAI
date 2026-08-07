@@ -8,11 +8,15 @@
 - 🚫 **低价值内容过滤** — 规则黑名单自动拦截百科/词典/官网首页/教程/下载站/门户频道（"半导体是什么?_知乎"、"DeepSeek | 深度求索"不入库）
 - 🔥 **双热度体系** — 热力值（0-100 相对分）+ 热度值（无界绝对热度，√压缩/代理源×15），24h 半衰期衰减
 - 📈 **潜力话题追踪** — 热度值增速（当前−初始）发现"正在变热"的话题，三级分类（🚀爆发/🔥热点/📈潜力）每轮重算可降级
-- 🤖 **AI 内容验证** — 批量判定（12条/批 × 并发2路）+ 营销/谣言识别，入榜话题显示 ⚠️疑似谣言/√不是谣言
+- 🤖 **AI 内容验证** — 批量判定（12条/批 × 并发2路）+ isVerified/isRumor/isActionable，入榜话题显示 ⚠️疑似谣言 / 值得关注
+- 🧠 **相关性理由 + 置信度** — 每条话题给出 15-25 字匹配理由，列表默认收起、点击展开；置信度常驻
+- 📊 **原始互动量** — 微博热度/标签、百度搜索指数、B站播放/弹幕/评论/收藏/点赞、HN 分数/评论；卡片主指标 + 详情分项
+- 🏆 **榜单排名** — 微博/百度/B站热榜前 10 显示 `#N 来源`
+- 🚦 **扫描进度** — 全局进度条实时显示百分比、阶段、当前来源与已发现条数（REST + Socket）
 - 🌐 **8 数据源** — 微博/百度/B站（双通道）/36氪/搜狗（双通道）/Bing/Hacker News/通用搜索
 - 🧭 **智能排序与筛选** — 综合推荐默认排序 + 最新发布/最新发现；发现时间范围、动态关键词、信息来源多选筛选，全部条件同步 URL
 - 🕒 **发布/发现双时间** — 列表标注原始发布时间（B站/36氪/HN）与系统发现时间
-- 📊 **7 天活跃口径** — KPI、实时网格、级别判定统一为近 7 天，超期话题自动降级
+- 📊 **7 天活跃口径** — KPI、实时列表、级别判定统一为近 7 天，超期话题自动降级
 - 🎨 **深色金融仪表盘 UI** — Space Grotesk + 绿青渐变 + 玻璃拟态，SVG 图标、KPI 数字动画、渐变面积趋势图
 - 🔌 **Agent Skill** — 可被其他 AI 调用查询热点
 
@@ -53,6 +57,8 @@ npm run dev
 
 每 30 分钟自动采集一轮；仪表盘可手动「立即扫描」触发。
 
+> v3.2 起，真实互动源额外输出结构化互动明细（engagement），话题行按来源显示主指标（如"播放 128万"），详情页展示完整分项。
+
 ## 技术栈
 
 | 层 | 技术 |
@@ -78,13 +84,14 @@ ai-hotmonitor/
 │   ├── client/          # React 前端
 │   │   └── src/
 │   │       ├── pages/   # 仪表盘/话题/详情/关键词/源/设置
-│   │       ├── components/ # KpiRow / VelocityGrid / TopicDetailChart / icons
+│   │       ├── components/ # KpiRow / TopicRow / ScanStatusBar / VelocityGrid / TopicDetailChart / icons
+│   │       ├── utils/   # 热度/互动量格式化
 │   │       └── hooks/   # useApi, useSocket
 │   └── shared/          # 共享类型定义
 ├── agent-skill/         # Agent Skill 封装
-├── prisma/              # Schema + 9 个迁移
-├── REQUIREMENTS.md      # 需求文档（v3.1）
-└── DESIGN.md            # 架构设计文档（v3.1）
+├── prisma/              # Schema + 10 个迁移
+├── REQUIREMENTS.md      # 需求文档（v3.2）
+└── DESIGN.md            # 架构设计文档（v3.2）
 ```
 
 ## API 端点
@@ -101,6 +108,7 @@ GET         /api/v1/sources           # 数据源健康
 GET         /api/v1/stats             # 仪表盘统计（KPI）
 GET         /api/v1/stats/velocity    # 增速 Top
 POST        /api/v1/crawl/trigger     # 手动触发（进行中返回 409）
+GET         /api/v1/crawl/status      # 扫描进度（百分比/阶段/当前来源/条数）
 GET/PUT     /api/v1/settings          # 系统设置
 GET         /api/v1/agent/*           # Agent 端点
 ```

@@ -1,21 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { Link } from 'react-router';
 import { useApi } from '../hooks/useApi.js';
-import { Icon } from './icons.js';
+import { TopicRow, type TopicRowData } from './TopicRow.js';
 
-interface VT { id: number; title: string; velocityScore: number | null; heatIndex: number; heatScore: number | null; growthRate: number | null; aiCategory: string | null; tier: string | null; source: { name: string }; }
-
-// Absolute heat display: thousands with locale separators, 万 for 10k+
-function formatHeat(score: number): string {
-  if (score >= 10000) return (score / 10000).toFixed(1) + '万';
-  return score.toLocaleString();
-}
-
-const TIER = {
-  burst:  { icon: 'rocket', label: '爆发', bg: 'bg-danger/8', border: 'border-danger/25', text: 'text-danger', bar: 'from-danger to-warning' },
-  hot:    { icon: 'flame', label: '热点', bg: 'bg-warning/8', border: 'border-warning/20', text: 'text-warning', bar: 'from-warning to-amber-400' },
-  rising: { icon: 'trending-up', label: '潜力', bg: 'bg-positive/8', border: 'border-positive/20', text: 'text-positive', bar: 'from-positive to-brand' },
-} as const;
+interface VT extends TopicRowData {}
 
 export function VelocityGrid() {
   // 实时话题按热度值（heatScore，无界绝对热度）降序展示
@@ -26,10 +14,10 @@ export function VelocityGrid() {
     if (!data?.length || !ref.current) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     import('gsap').then(({ gsap }) => {
-      gsap.from(ref.current!.querySelectorAll('.grid-item'), {
-        opacity: 0, y: 24, scale: 0.94,
-        duration: 0.5, stagger: { each: 0.05, from: 'start', grid: 'auto' },
-        ease: 'power3.out',
+      gsap.from(ref.current!.querySelectorAll('.topic-row'), {
+        opacity: 0, y: 16,
+        duration: 0.45, stagger: 0.04,
+        ease: 'power2.out',
       });
     });
   }, [data]);
@@ -49,54 +37,12 @@ export function VelocityGrid() {
         </div>
       </div>
 
-      <div ref={ref} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-        {data.map(t => {
-          const tier = t.tier ? TIER[t.tier as keyof typeof TIER] : undefined;
-          const tierBorder = tier ? tier.border : 'border-border';
-          const heatPct = Math.min(t.heatIndex, 100);
-
-          return (
-            <Link key={t.id} to={`/topics/${t.id}`}
-              className={`grid-item glow-card card p-4 no-underline group relative overflow-hidden ${tierBorder} ${t.tier === 'burst' ? 'fracture' : ''}`}
-            >
-              {tier && <span className={`absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r ${tier.bar} opacity-60`} />}
-              {/* Tier badge */}
-              <div className="flex items-center justify-between mb-3">
-                {tier ? (
-                  <span className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded ${tier.bg} ${tier.text}`}>
-                    <Icon name={tier.icon} className="w-3 h-3 inline-block -mt-0.5 mr-1 align-middle" /> {tier.label}
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-mono text-text-muted">{t.aiCategory || '未分类'}</span>
-                )}
-                {(() => {
-                  const v = t.velocityScore ?? 0;
-                  return (
-                    <span className={`text-[11px] font-mono font-semibold tabular-nums ${v > 15 ? 'text-danger' : v > 5 ? 'text-warning' : 'text-positive'}`}>
-                      {v > 0 ? '+' : ''}{v.toFixed(0)}
-                    </span>
-                  );
-                })()}
-              </div>
-
-              {/* Title */}
-              <p className="text-[13px] font-medium text-text-primary leading-snug line-clamp-2 mb-3 group-hover:text-brand transition-colors">
-                {t.title}
-              </p>
-
-              {/* Heat bar */}
-              <div className="h-1 bg-white/[0.06] rounded-full overflow-hidden mb-2.5">
-                <div className={`h-full rounded-full transition-all duration-700 bg-gradient-to-r ${tier ? tier.bar : 'from-brand to-brand-cyan'}`} style={{ width: `${heatPct}%` }} />
-              </div>
-
-              {/* Footer */}
-              <div className="flex items-center justify-between text-[10px] text-text-muted font-mono">
-                <span className="truncate">{t.source?.name}</span>
-                <span className="tabular-nums">{t.heatScore != null ? formatHeat(t.heatScore) : t.heatIndex.toFixed(0)}</span>
-              </div>
-            </Link>
-          );
-        })}
+      <div ref={ref} className="space-y-2">
+        {data.map(t => (
+          <div key={t.id} className="topic-row">
+            <TopicRow topic={t} />
+          </div>
+        ))}
       </div>
     </div>
   );

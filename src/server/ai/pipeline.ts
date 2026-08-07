@@ -17,11 +17,12 @@ interface RelevanceResult {
   relevant: boolean;
   matchedKeyword: string | null;
   confidence: number;
+  reason: string | null;
 }
 
 export async function checkKeywordRelevance(title: string): Promise<RelevanceResult> {
   const [result] = await checkKeywordRelevanceBatch([title]);
-  return result ?? { relevant: false, matchedKeyword: null, confidence: 0 };
+  return result ?? { relevant: false, matchedKeyword: null, confidence: 0, reason: null };
 }
 
 /**
@@ -33,7 +34,7 @@ export async function checkKeywordRelevanceBatch(titles: string[]): Promise<Arra
   if (!titles.length) return [];
 
   const keywords = await prisma.keyword.findMany({ where: { isActive: true } });
-  if (!keywords.length) return titles.map(() => ({ relevant: false, matchedKeyword: null, confidence: 0 }));
+  if (!keywords.length) return titles.map(() => ({ relevant: false, matchedKeyword: null, confidence: 0, reason: null }));
 
   const kwList = keywords.map(k => k.keyword);
 
@@ -41,7 +42,7 @@ export async function checkKeywordRelevanceBatch(titles: string[]): Promise<Arra
   const results: Array<RelevanceResult | null> = titles.map((title) => {
     for (const kw of kwList) {
       if (title.includes(kw)) {
-        return { relevant: true, matchedKeyword: kw, confidence: 1.0 };
+        return { relevant: true, matchedKeyword: kw, confidence: 1.0, reason: `标题直接包含关键词「${kw}」` };
       }
     }
     return null; // no exact match — needs AI judgement
@@ -58,12 +59,13 @@ export async function checkKeywordRelevanceBatch(titles: string[]): Promise<Arra
 - 语义相关即可（不需要出现原词，例如关键词"半导体"应匹配"台积电3nm量产"）
 - 完全不相关才判定为不匹配
 - 逐条对应输入顺序返回
+- 每条附带一句简短匹配理由（15-25字，中文）
 
 内容标题列表:
 ${aiNeeded.map(({ idx, title }) => `[${idx}] "${title}"`).join('\n')}
 
 返回 JSON：
-{"results": [{"index": 0, "relevant": true/false, "matchedKeyword": "匹配到的关键词或null", "confidence": 0.0-1.0}]}`;
+{"results": [{"index": 0, "relevant": true/false, "matchedKeyword": "匹配到的关键词或null", "confidence": 0.0-1.0, "reason": "匹配理由"}]}`;
 
   try {
     const result = await aiChat({
@@ -83,6 +85,7 @@ ${aiNeeded.map(({ idx, title }) => `[${idx}] "${title}"`).join('\n')}
                   relevant: { type: 'boolean' },
                   matchedKeyword: { type: 'string', nullable: true },
                   confidence: { type: 'number' },
+                  reason: { type: 'string' },
                 },
                 required: ['index', 'relevant', 'matchedKeyword', 'confidence'],
               },
@@ -92,13 +95,18 @@ ${aiNeeded.map(({ idx, title }) => `[${idx}] "${title}"`).join('\n')}
         },
       },
       maxTokens: 2048,
-    }) as { results?: Array<{ index: number; relevant: boolean; matchedKeyword: string | null; confidence: number }> };
+    }) as { results?: Array<{ index: number; relevant: boolean; matchedKeyword: string | null; confidence: number; reason?: string }> };
 
     const byIndex = new Map((result?.results || []).map((r) => [r.index, r]));
     for (const { idx } of aiNeeded) {
       const r = byIndex.get(idx);
       if (r) {
-        results[idx] = { relevant: r.relevant, matchedKeyword: r.matchedKeyword || null, confidence: r.confidence ?? 0 };
+        results[idx] = {
+          relevant: r.relevant,
+          matchedKeyword: r.matchedKeyword || null,
+          confidence: r.confidence ?? 0,
+          reason: typeof r.reason === 'string' && r.reason.trim() ? r.reason.trim() : null,
+        };
       }
       // missing entries stay null → retried next round
     }
@@ -112,9 +120,9 @@ ${aiNeeded.map(({ idx, title }) => `[${idx}] "${title}"`).join('\n')}
 // ── Stage 2: Content Verification ──
 
 interface VerifyResult {
-  classification: string;
-  confidence: number;
+  isRumor: boolean;
   isActionable: boolean;
+  isVerified: boolean;
 }
 
 export async function verifyTopic(title: string): Promise<VerifyResult | null> {
@@ -124,8 +132,8 @@ export async function verifyTopic(title: string): Promise<VerifyResult | null> {
 
 /**
  * Batch content verification — one AI call per batch instead of one per title.
- * Slimmed down: only classification (marketing/rumor detection) + isActionable are kept;
- * summary/category were dropped to shorten responses (faster per-batch latency).
+ * Slimmed down: only the three booleans actually consumed are requested
+ * (verified / rumor / actionable) to shorten responses and speed up batches.
  */
 export async function verifyTopicsBatch(titles: string[]): Promise<Array<VerifyResult | null>> {
   if (!titles.length) return [];
@@ -133,13 +141,14 @@ export async function verifyTopicsBatch(titles: string[]): Promise<Array<VerifyR
   const prompt = `你是热点内容审核员。逐条分析以下话题并分类，按输入顺序返回。
 
 规则（逐条）:
-分类: verified_real(真实) | marketing_spam(营销) | rumor_unverified(谣言) | entertainment(娱乐) | evergreen_noise(低价值)
+isVerified: 是否为真实可信内容（排除营销/谣言/娱乐/低价值噪音）
+isRumor: 是否疑似未经证实的谣言
 isActionable: 该内容是否值得采取行动（如引发市场关注/可投资参考）
 
 话题列表:
 ${titles.map((t, i) => `[${i}] "${t}"`).join('\n')}
 
-返回 JSON: {"results": [{"index": 0, "classification":"verified_real", "confidence":0.92, "isActionable":true}]}`;
+返回 JSON: {"results": [{"index": 0, "isVerified":true, "isRumor":false, "isActionable":true}]}`;
 
   try {
     const result = await aiChat({
@@ -156,11 +165,11 @@ ${titles.map((t, i) => `[${i}] "${t}"`).join('\n')}
                 type: 'object',
                 properties: {
                   index: { type: 'number' },
-                  classification: { type: 'string', enum: ['verified_real','marketing_spam','rumor_unverified','entertainment','evergreen_noise'] },
-                  confidence: { type: 'number' },
+                  isVerified: { type: 'boolean' },
+                  isRumor: { type: 'boolean' },
                   isActionable: { type: 'boolean' },
                 },
-                required: ['index','classification','confidence','isActionable'],
+                required: ['index','isVerified','isRumor','isActionable'],
               },
             },
           },
@@ -173,7 +182,7 @@ ${titles.map((t, i) => `[${i}] "${t}"`).join('\n')}
     const results: Array<VerifyResult | null> = new Array(titles.length).fill(null);
     for (const r of result?.results || []) {
       if (r && typeof r.index === 'number' && r.index >= 0 && r.index < titles.length) {
-        results[r.index] = { classification: r.classification, confidence: r.confidence, isActionable: r.isActionable };
+        results[r.index] = { isVerified: !!r.isVerified, isRumor: !!r.isRumor, isActionable: !!r.isActionable };
       }
     }
     return results;
@@ -316,12 +325,9 @@ async function processChunk(
     const relevance = relevances[j]!;
     const verify = verifyMap.get(j) ?? null;
 
-    const aiVerified = verify?.classification === 'verified_real' ? 1 : 2;
-    const isRumor = verify ? verify.classification === 'rumor_unverified' : null;
-    const category = relevance.matchedKeyword || '综合';
-    const summary = relevance.matchedKeyword
-      ? `${relevance.matchedKeyword}相关话题，热度 ${t.heatIndex.toFixed(0)}`
-      : null;
+    const aiVerified = verify ? (verify.isVerified ? 1 : 2) : 2;
+    const isRumor = verify ? verify.isRumor : null;
+    const isActionable = verify ? verify.isActionable : null;
 
     // tier = hot if heat >= HEAT_THRESHOLD, otherwise null (shown in topics but not dashboard)
     const tier: string | null = t.heatIndex >= HEAT_THRESHOLD ? 'hot' : null;
@@ -331,9 +337,10 @@ async function processChunk(
       data: {
         aiVerified,
         isRumor,
-        aiSummary: summary,
-        aiCategory: category,
+        isActionable,
         matchedKeyword: relevance.matchedKeyword,
+        matchReason: relevance.reason,
+        matchConfidence: relevance.confidence,
         tier,
       },
     });
@@ -344,17 +351,19 @@ async function processChunk(
     broadcastNewTopic({
       id: t.id, title: t.title, normalizedTitle: t.normalizedTitle,
       sourceId: t.sourceId, sourceRank: t.sourceRank, url: t.url,
-      heatIndex: t.heatIndex, rawHeat: t.rawHeat, growthRate: t.growthRate,
-      velocityScore: t.velocityScore, aiVerified, aiSummary: summary,
-      aiCategory: category, tier, matchedKeyword: relevance.matchedKeyword,
+      heatIndex: t.heatIndex, growthRate: t.growthRate,
+      velocityScore: t.velocityScore, aiVerified,
+      matchReason: relevance.reason, matchConfidence: relevance.confidence,
+      isActionable, isRumor, tier, matchedKeyword: relevance.matchedKeyword,
       firstSeenAt: t.firstSeenAt.toISOString(), lastSeenAt: t.lastSeenAt.toISOString(),
       publishedAt: t.publishedAt?.toISOString() ?? null,
       peakHeat: t.peakHeat, mentionCount: t.mentionCount,
+      engagement: t.engagement ? JSON.parse(t.engagement) : null,
     });
 
     // Alert for new hot topic
     if (tier === 'hot' && verify?.isActionable) {
-      await createAlert(t.id, null, 'new_hot', 'warning', `🔥 新热点: "${t.title}" — ${summary ?? '热度上升'}`);
+      await createAlert(t.id, null, 'new_hot', 'warning', `🔥 新热点: "${t.title}" — ${relevance.reason ?? '热度上升'}`);
     }
   }
 
@@ -362,7 +371,7 @@ async function processChunk(
   return { kept, discarded, retried };
 }
 
-export async function runAiPipeline(): Promise<{ kept: number; discarded: number }> {
+export async function runAiPipeline(onProgress?: (progress: number) => void): Promise<{ kept: number; discarded: number }> {
   console.log('[AI Pipeline] Starting keyword-driven pipeline...');
 
   // Get topics from last 2 hours without tier classification
@@ -374,7 +383,11 @@ export async function runAiPipeline(): Promise<{ kept: number; discarded: number
     take: 500,
   });
 
-  if (!rawTopics.length) { console.log('[AI Pipeline] No new topics'); return { kept: 0, discarded: 0 }; }
+  if (!rawTopics.length) {
+    console.log('[AI Pipeline] No new topics');
+    onProgress?.(100);
+    return { kept: 0, discarded: 0 };
+  }
 
   let kept = 0, discarded = 0, retried = 0;
 
@@ -392,6 +405,8 @@ export async function runAiPipeline(): Promise<{ kept: number; discarded: number
     kept += resA.kept + resB.kept;
     discarded += resA.discarded + resB.discarded;
     retried += resA.retried + resB.retried;
+    const processed = Math.min(i + BATCH_SIZE * 2, rawTopics.length);
+    onProgress?.(Math.round((processed / rawTopics.length) * 100));
   }
 
   console.log('[AI Pipeline] Batch relevance done, classifying tiers...');

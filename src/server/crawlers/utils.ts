@@ -5,6 +5,18 @@ export function normalizeTitle(title: string): string {
     .trim();
 }
 
+// Unified crawler output. `engagement` carries per-source interaction details
+// (views/comments/points/...) as a JSON-serializable object; sources without
+// interaction data leave it null/undefined.
+export interface CrawlerItem {
+  title: string;
+  url: string;
+  rank: number;
+  heatIndex: number;
+  heatScore: number | null;
+  publishedAt?: number | string | Date | null;
+  engagement?: Record<string, number | string | null> | null;
+}
 // ── Absolute heat score (0 ~ thousands) ──
 // heatScore = sqrt(weighted engagement) / 2 — sqrt compression keeps the scale
 // compact (max ~8-10k for once-in-a-year mega hits) while preserving order-of-magnitude

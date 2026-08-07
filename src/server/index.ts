@@ -10,7 +10,7 @@ import { sourcesRouter } from './routes/sources.js';
 import { settingsRouter } from './routes/settings.js';
 import { statsRouter } from './routes/stats.js';
 import { agentRouter } from './routes/agent.js';
-import { startScheduler, triggerCrawl } from './crawlers/scheduler.js';
+import { startScheduler, triggerCrawl, getCrawlStatus } from './crawlers/scheduler.js';
 
 const PORT = parseInt(process.env.PORT || '3456');
 
@@ -44,6 +44,11 @@ app.post('/api/v1/crawl/trigger', async (_req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET /api/v1/crawl/status — current scan progress (polled by the UI)
+app.get('/api/v1/crawl/status', (_req, res) => {
+  res.json(getCrawlStatus());
 });
 
 // ── Socket.io ──

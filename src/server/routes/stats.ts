@@ -67,7 +67,7 @@ statsRouter.get('/velocity', async (_req: Request, res: Response) => {
         velocityScore: true,
         heatIndex: true,
         growthRate: true,
-        aiCategory: true,
+        matchedKeyword: true,
         tier: true,
         source: { select: { name: true } },
       },

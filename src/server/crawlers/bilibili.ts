@@ -1,6 +1,6 @@
 import got from 'got';
 import prisma from '../db.js';
-import { calcHeatScore, randomUA } from './utils.js';
+import { calcHeatScore, randomUA, type CrawlerItem } from './utils.js';
 
 interface BiliVideo {
   title: string;
@@ -56,8 +56,8 @@ async function getBuvidCookie(): Promise<string | null> {
   }
 }
 
-export async function crawlBilibili(): Promise<Array<{ title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null; publishedAt?: number | string | Date | null }>> {
-  const results: Array<{ title: string; url: string; rank: number; heatIndex: number; heatScore: number | null; rawHeat: number | null; publishedAt?: number | string | Date | null }> = [];
+export async function crawlBilibili(): Promise<CrawlerItem[]> {
+  const results: CrawlerItem[] = [];
 
   // ── Channel 1: popular list ──
   try {
@@ -88,7 +88,12 @@ export async function crawlBilibili(): Promise<Array<{ title: string; url: strin
           rank: i + 1,
           heatIndex: Math.round((rawHeat / maxScore) * 100),
           heatScore: calcHeatScore(rawHeat),
-          rawHeat,
+          engagement: {
+            views: video.stat.view,
+            danmaku: video.stat.danmaku,
+            comments: video.stat.reply,
+            favorites: video.stat.favorite,
+          },
           publishedAt: video.pubdate ? video.pubdate * 1000 : null,
         });
       }
@@ -103,7 +108,7 @@ export async function crawlBilibili(): Promise<Array<{ title: string; url: strin
     if (keywords.length) {
       const cookie = await getBuvidCookie();
       if (cookie) {
-        const searchResults: Array<{ title: string; url: string; rawHeat: number; pubdate?: number }> = [];
+        const searchResults: Array<{ title: string; url: string; rawHeat: number; engagement: Record<string, number | string | null>; pubdate?: number }> = [];
         for (const kw of keywords) {
           try {
             const resp = await got(`https://api.bilibili.com/x/web-interface/search/type?search_type=video&keyword=${encodeURIComponent(kw.keyword)}&page=1&order=totalrank`, {
@@ -126,6 +131,7 @@ export async function crawlBilibili(): Promise<Array<{ title: string; url: strin
                   title,
                   url: v.arcurl || `https://www.bilibili.com/video/${v.bvid}`,
                   rawHeat: v.play + v.like * 2 + v.review * 3,
+                  engagement: { views: v.play, likes: v.like, comments: v.review },
                   pubdate: v.pubdate,
                 });
               }
@@ -145,7 +151,7 @@ export async function crawlBilibili(): Promise<Array<{ title: string; url: strin
             rank: 31 + i,
             heatIndex: Math.round((r.rawHeat / maxRaw) * 100),
             heatScore: calcHeatScore(r.rawHeat),
-            rawHeat: r.rawHeat,
+            engagement: r.engagement,
             publishedAt: r.pubdate ? r.pubdate * 1000 : null,
           });
         }
