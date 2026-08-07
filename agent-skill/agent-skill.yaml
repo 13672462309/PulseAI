@@ -1,16 +1,16 @@
 openapi: "3.0.3"
 info:
-  title: HotMonitor Agent Skill
+  title: PulseAI Agent Skill
   description: |
     热点监控工具 - AI-powered hot topic monitoring and early warning system.
     Query trending topics, monitor keywords, and receive hot topic alerts.
     Supports Chinese and international data sources.
   version: "1.0.0"
   contact:
-    name: HotMonitor
+    name: PulseAI
 servers:
   - url: http://localhost:3456/api/v1
-    description: Local HotMonitor instance
+    description: Local PulseAI instance
 
 paths:
   /agent/search:

@@ -56,8 +56,8 @@ initSocket(httpServer);
 
 // ── Start ──
 httpServer.listen(PORT, () => {
-  console.log(`[HotMonitor] Server running on http://localhost:${PORT}`);
-  console.log(`[HotMonitor] Socket.io ready for connections`);
+  console.log(`[PulseAI] Server running on http://localhost:${PORT}`);
+  console.log(`[PulseAI] Socket.io ready for connections`);
 
   // Start crawler scheduler
   startScheduler();

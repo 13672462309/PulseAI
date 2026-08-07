@@ -1,6 +1,6 @@
 # 变更记录（CHANGELOG）
 
-> 记录 HotMonitor 从 v1 到 v3 的全部功能迭代、架构修改与技术栈演变
+> 记录 PulseAI（原 ai-hotmonitor）从 v1 到 v3 的全部功能迭代、架构修改与技术栈演变
 > 最后更新: 2026-08-07
 
 ---
@@ -206,7 +206,7 @@
 - 统一 Lucide 风格 SVG 图标，替换 KPI/徽章/时间标注中的 emoji
 - KPI 卡片：级别渐变顶条 + 数字滚动动画；话题卡片：级别色条、渐变热度条、增速正负着色
 - 热度趋势图从折线图升级为渐变面积图；空状态/按钮/输入框统一打磨
-- 设计系统文档 `design-system/hotmonitor/MASTER.md` 同步更新
+- 设计系统文档 `design-system/pulseai/MASTER.md` 同步更新
 
 ---
 
@@ -232,6 +232,7 @@
 - 新增 `GET /api/v1/crawl/status` 与 Socket `crawl_status` 事件
 - 爬虫统一输出 `CrawlerItem.engagement`；调度器维护 `CrawlStatus`（爬取 0-80%、AI 82-98%、完成 100%）
 - topics/agent 路由移除 aiSummary/aiCategory/rawHeat 响应字段，category 过滤改用 matchedKeyword
+- 项目名由 ai-hotmonitor 更名为 PulseAI（物理目录名保留 ai-hotmonitor，避免影响工作区与远端配置）
 
 ### 4.3 前端
 

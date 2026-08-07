@@ -34,7 +34,7 @@ function Sidebar() {
         </span>
         <div className="min-w-0">
           <span className="block text-lg font-heading font-bold tracking-tight leading-none">
-            <span className="text-gradient">hotmonitor</span>
+            <span className="text-gradient">PulseAI</span>
           </span>
           <span className="block text-text-muted text-[9px] font-mono mt-1 uppercase tracking-[0.2em]">live radar</span>
         </div>

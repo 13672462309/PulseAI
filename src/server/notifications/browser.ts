@@ -21,7 +21,7 @@ function init(): boolean {
   }
 
   webpush.setVapidDetails(
-    'mailto:admin@hotmonitor.local',
+    'mailto:admin@pulseai.local',
     vapidKeys.publicKey,
     vapidKeys.privateKey
   );

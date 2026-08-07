@@ -44,7 +44,7 @@ export async function sendEmailAlert(params: {
       html: `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0E1223; color: #F8FAFC; border-radius: 8px; overflow: hidden;">
           <div style="background: #020617; padding: 20px; border-bottom: 1px solid #00FF41;">
-            <h1 style="margin: 0; font-size: 20px; color: #00FF41;">⚡ HotMonitor Alert</h1>
+            <h1 style="margin: 0; font-size: 20px; color: #00FF41;">⚡ PulseAI Alert</h1>
           </div>
           <div style="padding: 24px;">
             <h2 style="margin: 0 0 12px; font-size: 18px; color: #F8FAFC;">${params.topicTitle}</h2>
@@ -55,7 +55,7 @@ export async function sendEmailAlert(params: {
             <a href="${params.url}" style="display: inline-block; background: #00FF41; color: #020617; padding: 10px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 14px;">查看详情 →</a>
           </div>
           <div style="background: #020617; padding: 12px 20px; text-align: center; font-size: 11px; color: #475569;">
-            由 HotMonitor 热点监控系统自动发送
+            由 PulseAI 热点监控系统自动发送
           </div>
         </div>
       `,

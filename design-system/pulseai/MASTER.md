@@ -6,7 +6,7 @@
 
 ---
 
-**Project:** HotMonitor
+**Project:** PulseAI
 **Generated:** 2026-08-06 12:57:45
 **Last Refined:** 2026-08-06
 **Category:** AI Hot-Topic Monitoring / Investment Dashboard (Dark Mode)

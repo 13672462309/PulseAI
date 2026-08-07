@@ -1,5 +1,5 @@
-// HotMonitor Service Worker — Push Notifications
-const CACHE_NAME = 'hotmonitor-v1';
+// PulseAI Service Worker — Push Notifications
+const CACHE_NAME = 'pulseai-v1';
 
 // Cache static assets
 self.addEventListener('install', (event) => {
@@ -32,7 +32,7 @@ self.addEventListener('push', (event) => {
   } catch {
     // Fallback: show raw text
     event.waitUntil(
-      self.registration.showNotification('HotMonitor Alert', {
+      self.registration.showNotification('PulseAI Alert', {
         body: event.data.text(),
         icon: '/icon-192.png',
       })

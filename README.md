@@ -1,4 +1,4 @@
-# ⚡ HotMonitor — AI 热点监控指挥中心
+# ⚡ PulseAI — AI 热点监控指挥中心
 
 > 关键词驱动的 AI 热点监控工具，为投资者发现对炒股有实际意义的新兴热门话题
 
@@ -74,7 +74,7 @@ npm run dev
 ## 项目结构
 
 ```
-ai-hotmonitor/
+PulseAI/
 ├── src/
 │   ├── server/          # Express 后端
 │   │   ├── crawlers/    # 8 源爬虫 + 调度器 + 内容过滤 + 关键词搜索词
@@ -118,8 +118,8 @@ GET         /api/v1/agent/*           # Agent 端点
 安装到 Claude Code 后，可通过以下命令调用：
 
 ```bash
-/hotmonitor search AI大模型        # 搜索热点
-/hotmonitor trending 科技           # 查看潜力热点
-/hotmonitor monitor 芯片 科技       # 添加监控关键词
-/hotmonitor status                 # 查看系统状态
+/pulseai search AI大模型        # 搜索热点
+/pulseai trending 科技           # 查看潜力热点
+/pulseai monitor 芯片 科技       # 添加监控关键词
+/pulseai status                 # 查看系统状态
 ```
