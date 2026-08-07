@@ -8,6 +8,7 @@ export const keywordsRouter = Router();
 keywordsRouter.get('/', async (_req: Request, res: Response) => {
   try {
     const keywords = await prisma.keyword.findMany({
+      where: { deletedAt: null },
       orderBy: { createdAt: 'desc' },
     });
     res.json(keywords);
@@ -24,9 +25,37 @@ keywordsRouter.post('/', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Keyword is required' });
     }
 
+    const name = keyword.trim();
+    const existing = await prisma.keyword.findUnique({ where: { keyword: name } });
+
+    // Re-adding a soft-deleted keyword restores it and unhides its topics.
+    if (existing?.deletedAt) {
+      const restored = await prisma.keyword.update({
+        where: { id: existing.id },
+        data: {
+          deletedAt: null,
+          isActive: true,
+          category: category || existing.category,
+          growthThreshold: growthThreshold || existing.growthThreshold,
+        },
+      });
+      await prisma.topic.updateMany({
+        where: { matchedKeyword: name },
+        data: { isHidden: false },
+      });
+      getSearchQueries(restored.keyword).catch(() => {});
+      getIntentContext(restored.keyword).catch(() => {});
+      getZhExpansionQueries(restored.keyword).catch(() => {});
+      return res.status(200).json(restored);
+    }
+
+    if (existing) {
+      return res.status(409).json({ error: 'Keyword already exists' });
+    }
+
     const created = await prisma.keyword.create({
       data: {
-        keyword: keyword.trim(),
+        keyword: name,
         category: category || 'custom',
         growthThreshold: growthThreshold || 0.15,
       },
@@ -87,7 +116,21 @@ keywordsRouter.put('/:id', async (req: Request, res: Response) => {
 keywordsRouter.delete('/:id', async (req: Request, res: Response) => {
   try {
     const id = parseInt(String(req.params.id));
-    await prisma.keyword.delete({ where: { id } });
+    const keyword = await prisma.keyword.findUnique({ where: { id } });
+    if (!keyword || keyword.deletedAt) return res.status(404).json({ error: 'Keyword not found' });
+
+    // Soft delete: stop monitoring, hide its topics, and allow re-adding the
+    // same name later (which restores the keyword and unhides the topics).
+    await prisma.$transaction([
+      prisma.keyword.update({
+        where: { id },
+        data: { isActive: false, deletedAt: new Date() },
+      }),
+      prisma.topic.updateMany({
+        where: { matchedKeyword: keyword.keyword },
+        data: { isHidden: true },
+      }),
+    ]);
     res.status(204).send();
   } catch (err: any) {
     if (err?.code === 'P2025') {

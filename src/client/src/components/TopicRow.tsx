@@ -7,6 +7,7 @@ import { formatHeat, formatTime, primaryEngagement } from '../utils/format.js';
 export interface TopicRowData {
   id: number;
   title: string;
+  normalizedTitle?: string;
   heatIndex: number;
   heatScore: number | null;
   growthRate?: number | null;

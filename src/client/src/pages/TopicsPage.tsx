@@ -86,7 +86,17 @@ export function TopicsPage() {
   }, [q, sort, tier, since, keywords, sources, page]);
 
   const { data } = useApi<{ data: TopicRowData[]; total: number }>(url);
-  const topics = data?.data || [];
+  // Safety net: hide duplicate rows with the same normalized title
+  // (legacy rows from the old 2-hour dedup window / cross-source duplicates).
+  const topics = useMemo(() => {
+    const seen = new Set<string>();
+    return (data?.data || []).filter(t => {
+      const key = t.normalizedTitle || t.title;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [data]);
   const total = data?.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / 30));
 

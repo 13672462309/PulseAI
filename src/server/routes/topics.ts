@@ -54,8 +54,12 @@ topicsRouter.get('/', async (req: Request, res: Response) => {
       since, page = '1', limit = '30'
     } = req.query;
 
+    // Only topics tied to keywords that still exist (not soft-deleted) are visible.
+    const visibleKeywords = await prisma.keyword.findMany({ where: { deletedAt: null }, select: { keyword: true } });
+    const kwNames = visibleKeywords.map(k => k.keyword);
     const where: any = {
-      matchedKeyword: { not: null }, // 只展示 AI 确认与关键词相关的话题
+      matchedKeyword: { in: kwNames }, // 只展示仍存在关键词的话题（含孤儿标签兜底）
+      isHidden: false,                 // 关键词被软删除的话题隐藏
     };
 
     if (verified !== undefined) {
@@ -128,10 +132,12 @@ topicsRouter.get('/', async (req: Request, res: Response) => {
 // and every data source with topic counts.
 topicsRouter.get('/filter-options', async (_req: Request, res: Response) => {
   try {
-    const [kwGroups, sources, activeKeywords] = await Promise.all([
+    const visibleKeywords = await prisma.keyword.findMany({ where: { deletedAt: null }, select: { keyword: true } });
+    const kwNames = visibleKeywords.map(k => k.keyword);
+    const [kwGroups, sources] = await Promise.all([
       prisma.topic.groupBy({
         by: ['matchedKeyword'],
-        where: { matchedKeyword: { not: null } },
+        where: { matchedKeyword: { in: kwNames }, isHidden: false },
         _count: { _all: true },
       }),
       prisma.source.findMany({
@@ -142,7 +148,6 @@ topicsRouter.get('/filter-options', async (_req: Request, res: Response) => {
           },
         },
       }),
-      prisma.keyword.findMany({ orderBy: { id: 'asc' }, select: { keyword: true } }),
     ]);
 
     const countMap = new Map<string, number>();
@@ -150,7 +155,7 @@ topicsRouter.get('/filter-options', async (_req: Request, res: Response) => {
       if (g.matchedKeyword) countMap.set(g.matchedKeyword, g._count._all);
     }
     // 每新增一个关键词都会出现在这里（即使还没有话题，计数为 0）
-    for (const kw of activeKeywords) {
+    for (const kw of visibleKeywords) {
       if (!countMap.has(kw.keyword)) countMap.set(kw.keyword, 0);
     }
 
@@ -176,10 +181,13 @@ topicsRouter.get('/filter-options', async (_req: Request, res: Response) => {
 topicsRouter.get('/trending', async (req: Request, res: Response) => {
   try {
     const limit = parseInt((req.query.limit as string) || '20');
+    const visibleKeywords = await prisma.keyword.findMany({ where: { deletedAt: null }, select: { keyword: true } });
     const topics = await prisma.topic.findMany({
       where: {
         tier: { not: null },
         aiVerified: 1,
+        isHidden: false,
+        matchedKeyword: { in: visibleKeywords.map(k => k.keyword) },
         lastSeenAt: { gte: new Date(Date.now() - 7 * 24 * 3600_000) },
         velocityScore: { not: null },
       },
@@ -197,9 +205,12 @@ topicsRouter.get('/trending', async (req: Request, res: Response) => {
 topicsRouter.get('/hot', async (req: Request, res: Response) => {
   try {
     const limit = parseInt((req.query.limit as string) || '20');
+    const visibleKeywords = await prisma.keyword.findMany({ where: { deletedAt: null }, select: { keyword: true } });
     const topics = await prisma.topic.findMany({
       where: {
         tier: { not: null },
+        isHidden: false,
+        matchedKeyword: { in: visibleKeywords.map(k => k.keyword) },
         lastSeenAt: { gte: new Date(Date.now() - 7 * 24 * 3600_000) },
       },
       orderBy: { heatScore: { sort: 'desc', nulls: 'last' } },
@@ -216,6 +227,8 @@ topicsRouter.get('/hot', async (req: Request, res: Response) => {
 topicsRouter.get('/:id', async (req: Request, res: Response) => {
   try {
     const id = parseInt(String(req.params.id));
+    const visibleKeywords = await prisma.keyword.findMany({ where: { deletedAt: null }, select: { keyword: true } });
+    const kwNames = visibleKeywords.map(k => k.keyword);
     const topic = await prisma.topic.findUnique({
       where: { id },
       include: {
@@ -223,7 +236,9 @@ topicsRouter.get('/:id', async (req: Request, res: Response) => {
         history: { orderBy: { recordedAt: 'desc' }, take: 200 },
       },
     });
-    if (!topic) return res.status(404).json({ error: 'Topic not found' });
+    if (!topic || topic.isHidden || (topic.matchedKeyword && !kwNames.includes(topic.matchedKeyword))) {
+      return res.status(404).json({ error: 'Topic not found' });
+    }
     res.json(serializeTopic(topic));
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch topic' });

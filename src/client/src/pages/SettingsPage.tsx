@@ -11,7 +11,7 @@ export function SettingsPage() {
   const save = async (key: string) => { setSaving(s => ({ ...s, [key]: true })); await apiFetch(`/api/v1/settings/${key}`, { method: 'PUT', body: JSON.stringify({ value: form[key] }) }); setSaving(s => ({ ...s, [key]: false })); };
 
   const items = [
-    { key: 'crawl_interval_ms', label: '爬取间隔 (ms)', desc: '默认 1800000 = 30 分钟。修改后立即生效。' },
+    { key: 'crawl_interval_ms', label: '爬取间隔 (ms)', desc: '默认 7200000 = 2 小时。修改后立即生效。' },
     { key: 'retention_days', label: '数据保留天数', desc: '历史数据最长保留天数，超期自动清理。' },
   ];
 

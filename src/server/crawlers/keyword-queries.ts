@@ -151,7 +151,7 @@ export function pickZhQueries(variants: string[], round: number, count = 2): str
 }
 
 export function currentExpansionRound(): number {
-  return Math.floor(Date.now() / 1800000); // 30-min crawl interval
+  return Math.floor(Date.now() / 7200000); // 2h crawl interval — query variants rotate once per round
 }
 
 /**

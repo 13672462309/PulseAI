@@ -1,6 +1,6 @@
 # PulseAI 热点监控工具 — 架构设计文档
 
-> 版本: v3.3 | 2026-08-07 | 技术栈已按实际运行状态验证
+> 版本: v3.4 | 2026-08-07 | 技术栈已按实际运行状态验证
 
 ---
 
@@ -167,6 +167,8 @@ Stage 3: 定级 classifyTiers          ← 本地计算（无 AI）
 
 **扫描进度（v3.2）**：`scheduler` 维护全局 `CrawlStatus`（running/phase/progress/currentSource/topicsFound），爬取阶段按来源数 0→80%，AI 阶段按批次 82→98%，完成置 100%；通过 `GET /api/v1/crawl/status` 与 Socket `crawl_status` 推送。
 
+**调用量控制（v3.4）**：管线只取两类话题——`matchedKeyword IS NULL`（未判定/相关性重试）与 `verifyRetry = true`（verify 失败待补）；已判定话题不再重复送 AI，级别由 `classifyTiers` 本地每轮重算。
+
 ### 5.3 AI 健壮性（关键修复）
 
 | 问题 | 修复 |
@@ -188,8 +190,9 @@ Stage 3: 定级 classifyTiers          ← 本地计算（无 AI）
 |----|------|------|
 | 标题包含 | 百科/词典/单词/是什么/什么是/什么叫/官网/官方下载/下载/指南/教程/技巧/保姆级/新闻资讯/最新资讯/娱乐看猫眼… | Film_百度百科、什么是半导体、DeepSeek 使用技巧 |
 | 标题正则 | `下载(?!量)`（排除"下载量"）、短"A \| B"品牌页 | Download Claude |
+| 公司注册/商城 | `XX有限公司` 结尾；`公司名+商城/官网/首页` 组合 | 华为技术有限公司、小米科技有限责任公司-小米商城-Xiaomi |
 | URL 黑名单 | baike.baidu.com / zhihu.com/topic / dramx.com / 163.com/dy/media… | 全球半导体观察 |
-| 品牌-域名 | 标题词 ∩ 域名核心词，且路径为首页/下载/文档/语言页 | DeepSeek \| 深度求索（deepseek.com）、claude.com/download |
+| 品牌-域名 | 中文别名映射 + 品牌域名（含镜像）除 news/blog/press 外全拦截 | 华为-构建万物互联的世界（huawei.com）、aa-deepseek.com.cn |
 
 设计原则：**宁可漏网不误杀**——知乎问答/深度文章、测评/实测内容、含"下载量"的新闻均保留。
 
@@ -209,6 +212,7 @@ model Keyword {
   searchQueries String?  // 英文搜索词缓存（JSON 数组）
   intentContext String?  // 关键词意图上下文（投资语境/关联方向，AI 生成缓存）
   zhExpansionQueries String? // 中文扩展查询词（JSON 数组，国内渠道用）
+  deletedAt     DateTime? // 软删除标记（删除=停用+隐藏话题；同名重加恢复）
 }
 
 model Topic {
@@ -225,11 +229,13 @@ model Topic {
   aiVerified      Int      @default(0)
   isRumor         Boolean?                  // 疑似谣言标记
   isActionable    Boolean?                  // AI 判定值得关注
+  verifyRetry     Boolean  @default(false)  // verify 失败待下轮重试
   matchReason     String?                   // AI 匹配理由（15-25 字）
   matchConfidence Float?                    // AI 匹配置信度 0-1
   engagement      String?                   // 互动明细 JSON（views/comments/points...）
   snippet         String?                   // 搜索结果摘要（判定与测试用）
   searchQuery     String?                   // 实际命中的搜索词（追踪误判来源）
+  isHidden        Boolean  @default(false)  // 关键词被删除/标签失效时隐藏
   aiSummary       String?                   // 已停写，待删列
   aiCategory      String?                   // 已停写，待删列
   tier            String?                   // burst | hot | rising | null
@@ -267,6 +273,8 @@ model Alert {
 | fix_backfill_recommend_score | 修正回填（epoch 毫秒新鲜度计算） |
 | add_topic_engagement_signals | Topic.matchReason / matchConfidence / engagement / isActionable |
 | add_search_context_and_snippet | Keyword.intentContext / zhExpansionQueries；Topic.snippet / searchQuery |
+| add_verify_retry | Topic.verifyRetry（verify 失败重试标记） |
+| keyword_soft_delete_and_hide_topics | Keyword.deletedAt / Topic.isHidden（软删除 + 隐藏话题） |
 
 ---
 
@@ -366,7 +374,8 @@ src/
 │   ├── utils/format.ts        # 热度/互动量格式化 + 按来源主指标/分项
 │   └── hooks/                 # useApi / useSocket
 ├── shared/types.ts
-└── tests/                     # 单元/集成测试 + relevance 黄金用例（68 条）
+├── tests/                     # 单元/集成测试 + relevance 黄金用例（68 条）
+└── scripts/                   # 数据治理：官网/公司页清理、重复话题合并
 ```
 
 ---
@@ -398,3 +407,8 @@ src/
 23. **意图上下文驱动**：`intentContext` 同时服务扩展词生成与相关性判定，并可用显式排除（二手回收/教程技巧/第三方改装/营销活动）收紧边界
 24. **判定输入结构化**：标题/摘要/来源/意图分开展示，摘要作为标题不足时的主要依据；移除“标题含词即放行”快路径（评估实测精确率 72.7% → 88.9%）
 25. **评估体系可量化**：68 条黄金用例 + 单元/集成测试 + `npm run eval:relevance` 输出 P/R/F1、混淆矩阵与错误样例，所有改动先跑分后上线
+26. **AI 调用最小化**：管线只处理“未判定”与“verify 待重试”，已判定话题由本地 classifyTiers 重算；verifyRetry 保证失败可补且不重判
+27. **内容过滤品牌强规则**：品牌域名（含镜像）非新闻页全拦截 + 中文别名 + 公司注册/商城标题规则，官网新闻路径保留
+28. **7 天查重窗口**：话题身份窗口与活跃窗口统一，7 天内重现合并、超期视为新话题；存量重复合并脚本兜底
+29. **关键词软删除**：删除=停用+隐藏话题（deletedAt/isHidden），同名重加恢复；所有查询限定仍存在的关键词
+30. **调度间隔 2 小时**：扫描周期与扩展词轮换统一为 7200000ms，降低爬取与 AI 频率

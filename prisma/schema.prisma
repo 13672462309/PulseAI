@@ -18,6 +18,7 @@ model Keyword {
   searchQueries   String?  // JSON array of English search queries (cached, builtin map + LLM-generated)
   intentContext   String?  // AI 生成的关键词意图上下文（投资语境/关联方向）
   zhExpansionQueries String? // JSON array of Chinese expansion queries (domestic channels)
+  deletedAt       DateTime? // 软删除标记：删除关键词时置位，同名重新添加时恢复
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -59,6 +60,7 @@ model Topic {
   aiVerified      Int      @default(0)
   isRumor         Boolean? // derived from verify classification (rumor_unverified); null = not verified
   isActionable    Boolean? // AI: worth acting on (market attention / investment reference)
+  verifyRetry     Boolean  @default(false) // verify 调用失败，待下轮重试
   aiSummary       String?
   aiCategory      String?
   tier            String?   // "burst" | "hot" | "rising" | null (not keyword-relevant)
@@ -68,6 +70,7 @@ model Topic {
   engagement      String?   // JSON: per-source engagement breakdown (views/comments/etc.)
   snippet         String?   // search-result snippet used by relevance judgement/eval
   searchQuery     String?   // the exact query that surfaced this topic
+  isHidden        Boolean  @default(false) // 关键词被软删除时置 true，同名恢复时解除
   firstSeenAt     DateTime
   lastSeenAt      DateTime
   publishedAt     DateTime? // original publish time from the source (null when unknown)

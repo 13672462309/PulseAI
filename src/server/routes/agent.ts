@@ -21,6 +21,7 @@ agentRouter.get('/search', async (req: Request, res: Response) => {
       sort === 'newest' ? { firstSeenAt: 'desc' } :
       { velocityScore: 'desc' };
 
+    const visibleKeywords = await prisma.keyword.findMany({ where: { deletedAt: null }, select: { keyword: true } });
     const topics = await prisma.topic.findMany({
       where: {
         OR: [
@@ -28,6 +29,8 @@ agentRouter.get('/search', async (req: Request, res: Response) => {
           { matchedKeyword: { contains: query.trim() } },
         ],
         aiVerified: 1,
+        isHidden: false,
+        matchedKeyword: { in: visibleKeywords.map(k => k.keyword) },
         lastSeenAt: { gte: new Date(Date.now() - 24 * 3600_000) },
       },
       orderBy: sortBy,
@@ -77,9 +80,12 @@ agentRouter.get('/trending', async (req: Request, res: Response) => {
     const category = req.query.category as string;
     const limit = parseInt((req.query.limit as string) || '20');
 
+    const visibleKeywords = await prisma.keyword.findMany({ where: { deletedAt: null }, select: { keyword: true } });
     const where: any = {
       aiVerified: 1,
       velocityScore: { not: null },
+      isHidden: false,
+      matchedKeyword: { in: visibleKeywords.map(k => k.keyword) },
       lastSeenAt: { gte: new Date(Date.now() - 24 * 3600_000) },
     };
     if (category) where.matchedKeyword = category;

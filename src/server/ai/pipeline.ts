@@ -115,7 +115,7 @@ export async function checkKeywordRelevanceBatch(items: RelevanceInput[]): Promi
           required: ['results'],
         },
       },
-      maxTokens: 2048,
+      maxTokens: 4096,
     }) as { results?: Array<{ index: number; relevant: boolean; matchedKeyword: string | null; confidence: number; reason?: string }> };
 
     const byIndex = new Map((result?.results || []).map((r) => [r.index, r]));
@@ -223,10 +223,14 @@ export async function classifyTiers(): Promise<void> {
   // once they stop appearing for a full active window (7 days).
   const now = Date.now();
   const activeWindow = new Date(now - 7 * 24 * 3600_000);
+  const visibleKeywords = await prisma.keyword.findMany({ where: { deletedAt: null }, select: { keyword: true } });
+  const kwNames = visibleKeywords.map(k => k.keyword);
   const topics = await prisma.topic.findMany({
     where: {
+      isHidden: false,
+      matchedKeyword: { in: kwNames },
       OR: [
-        { matchedKeyword: { not: null }, lastSeenAt: { gte: activeWindow } },
+        { lastSeenAt: { gte: activeWindow } },
         { tier: { not: null } },
       ],
     },
@@ -354,6 +358,7 @@ async function processChunk(
     const aiVerified = verify ? (verify.isVerified ? 1 : 2) : 2;
     const isRumor = verify ? verify.isRumor : null;
     const isActionable = verify ? verify.isActionable : null;
+    const verifyRetry = verifyIdx.includes(j) && verify === null;
 
     // tier = hot if heat >= HEAT_THRESHOLD, otherwise null (shown in topics but not dashboard)
     const tier: string | null = t.heatIndex >= HEAT_THRESHOLD ? 'hot' : null;
@@ -364,6 +369,7 @@ async function processChunk(
         aiVerified,
         isRumor,
         isActionable,
+        verifyRetry,
         matchedKeyword: relevance.matchedKeyword,
         matchReason: relevance.reason,
         matchConfidence: relevance.confidence,
@@ -397,20 +403,61 @@ async function processChunk(
   return { kept, discarded, retried };
 }
 
+async function retryVerifyChunk(
+  chunk: Awaited<ReturnType<typeof prisma.topic.findMany>>[number][],
+): Promise<{ verified: number; retried: number }> {
+  if (!chunk.length) return { verified: 0, retried: 0 };
+  const verifies = await verifyTopicsBatch(chunk.map(t => t.title));
+  let verified = 0, retried = 0;
+  for (let j = 0; j < chunk.length; j++) {
+    const t = chunk[j];
+    const v = verifies[j];
+    if (v === null) {
+      retried++; // keep verifyRetry = true, try again next round
+      continue;
+    }
+    await prisma.topic.update({
+      where: { id: t.id },
+      data: {
+        aiVerified: v.isVerified ? 1 : 2,
+        isRumor: v.isRumor,
+        isActionable: v.isActionable,
+        verifyRetry: false,
+      },
+    });
+    verified++;
+    if (t.tier === 'hot' && v.isActionable) {
+      await createAlert(t.id, null, 'new_hot', 'warning', `🔥 新热点: "${t.title}" — 内容核验完成`);
+    }
+  }
+  return { verified, retried };
+}
+
 export async function runAiPipeline(onProgress?: (progress: number) => void): Promise<{ kept: number; discarded: number }> {
   console.log('[AI Pipeline] Starting keyword-driven pipeline...');
 
-  // Get topics from last 2 hours without tier classification
-  const rawTopics = await prisma.topic.findMany({
-    where: {
-      tier: null,
-      lastSeenAt: { gte: new Date(Date.now() - 2 * 3600_000) },
-    },
-    take: 500,
-  });
+  const since = new Date(Date.now() - 2 * 3600_000);
+  // Only send topics that actually need AI:
+  //  - never judged (matchedKeyword IS NULL, includes relevance retries)
+  //  - judged relevant but verify failed last round (verifyRetry)
+  const [rawTopics, verifyRetries] = await Promise.all([
+    prisma.topic.findMany({
+      where: { matchedKeyword: null, isHidden: false, lastSeenAt: { gte: since } },
+      take: 500,
+    }),
+    prisma.topic.findMany({
+      where: {
+        matchedKeyword: { not: null },
+        verifyRetry: true,
+        isHidden: false,
+        OR: [{ lastSeenAt: { gte: since } }, { tier: { not: null } }],
+      },
+      take: 200,
+    }),
+  ]);
 
-  if (!rawTopics.length) {
-    console.log('[AI Pipeline] No new topics');
+  if (!rawTopics.length && !verifyRetries.length) {
+    console.log('[AI Pipeline] No pending topics');
     onProgress?.(100);
     return { kept: 0, discarded: 0 };
   }
@@ -418,30 +465,46 @@ export async function runAiPipeline(onProgress?: (progress: number) => void): Pr
   const sources = await prisma.source.findMany({ select: { id: true, name: true } });
   const sourceMap = new Map(sources.map(s => [s.id, s.name]));
   let kept = 0, discarded = 0, retried = 0;
+  let verifyRetried = 0;
 
-  // Stage 1+2: keyword relevance (GATE) with verify, processed 2 batches concurrently.
-  // Concurrency halves the AI latency wall-clock; batches are independent.
-  const totalBatches = Math.ceil(rawTopics.length / BATCH_SIZE);
-  for (let i = 0; i < rawTopics.length; i += BATCH_SIZE * 2) {
-    const batchNo = i / BATCH_SIZE + 1;
-    const chunkA = rawTopics.slice(i, i + BATCH_SIZE);
-    const chunkB = rawTopics.slice(i + BATCH_SIZE, i + BATCH_SIZE * 2);
-    const [resA, resB] = await Promise.all([
-      processChunk(chunkA, batchNo, totalBatches, sourceMap),
-      chunkB.length ? processChunk(chunkB, batchNo + 1, totalBatches, sourceMap) : Promise.resolve({ kept: 0, discarded: 0, retried: 0 }),
-    ]);
-    kept += resA.kept + resB.kept;
-    discarded += resA.discarded + resB.discarded;
-    retried += resA.retried + resB.retried;
-    const processed = Math.min(i + BATCH_SIZE * 2, rawTopics.length);
-    onProgress?.(Math.round((processed / rawTopics.length) * 100));
+  if (rawTopics.length) {
+    // Stage 1+2: keyword relevance (GATE) with verify, 2 batches concurrently.
+    const totalBatches = Math.ceil(rawTopics.length / BATCH_SIZE);
+    for (let i = 0; i < rawTopics.length; i += BATCH_SIZE * 2) {
+      const batchNo = i / BATCH_SIZE + 1;
+      const chunkA = rawTopics.slice(i, i + BATCH_SIZE);
+      const chunkB = rawTopics.slice(i + BATCH_SIZE, i + BATCH_SIZE * 2);
+      const [resA, resB] = await Promise.all([
+        processChunk(chunkA, batchNo, totalBatches, sourceMap),
+        chunkB.length ? processChunk(chunkB, batchNo + 1, totalBatches, sourceMap) : Promise.resolve({ kept: 0, discarded: 0, retried: 0 }),
+      ]);
+      kept += resA.kept + resB.kept;
+      discarded += resA.discarded + resB.discarded;
+      retried += resA.retried + resB.retried;
+      const processed = Math.min(i + BATCH_SIZE * 2, rawTopics.length);
+      onProgress?.(Math.min(95, Math.round((processed / rawTopics.length) * 100)));
+    }
   }
 
+  if (verifyRetries.length) {
+    console.log(`[AI Pipeline] Retrying verify for ${verifyRetries.length} topics...`);
+    for (let i = 0; i < verifyRetries.length; i += BATCH_SIZE * 2) {
+      const chunkA = verifyRetries.slice(i, i + BATCH_SIZE);
+      const chunkB = verifyRetries.slice(i + BATCH_SIZE, i + BATCH_SIZE * 2);
+      const [resA, resB] = await Promise.all([
+        retryVerifyChunk(chunkA),
+        chunkB.length ? retryVerifyChunk(chunkB) : Promise.resolve({ verified: 0, retried: 0 }),
+      ]);
+      verifyRetried += resA.retried + resB.retried;
+    }
+  }
+
+  onProgress?.(100);
   console.log('[AI Pipeline] Batch relevance done, classifying tiers...');
   // Stage 3: Classify tiers (velocity-based refinement)
   await classifyTiers();
 
-  console.log(`[AI Pipeline] Done: kept ${kept}, discarded ${discarded}, retried ${retried}`);
+  console.log(`[AI Pipeline] Done: kept ${kept}, discarded ${discarded}, relevance retried ${retried}, verify retried ${verifyRetried}`);
   return { kept, discarded };
 }
 

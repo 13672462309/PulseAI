@@ -25,6 +25,14 @@ export function VelocityGrid() {
   if (loading) return <GridSkeleton />;
   if (!data?.length) return <EmptyState />;
 
+  const seen = new Set<string>();
+  const uniqueTopics = data.filter(t => {
+    const key = t.normalizedTitle || t.title;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
@@ -38,7 +46,7 @@ export function VelocityGrid() {
       </div>
 
       <div ref={ref} className="space-y-2">
-        {data.map(t => (
+        {uniqueTopics.map(t => (
           <div key={t.id} className="topic-row">
             <TopicRow topic={t} />
           </div>

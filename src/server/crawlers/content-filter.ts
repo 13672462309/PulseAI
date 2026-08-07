@@ -26,6 +26,10 @@ const TITLE_BLOCKLIST = [
 // Regex patterns: "下载" outside of the "下载量" context is a download-site signal
 const TITLE_PATTERNS: RegExp[] = [
   /下载(?!量)/,
+  // Company registry / official profile pages ("华为技术有限公司", "小米科技有限责任公司")
+  /^[\u4e00-\u9fa5A-Za-z0-9·&（）()\- ]{2,24}(有限责任公司|股份有限公司|有限公司)$/,
+  // Company + store/official markers ("小米科技有限责任公司-小米商城-Xiaomi")
+  /(有限责任公司|股份有限公司|有限公司)[\u4e00-\u9fa5A-Za-z0-9·&（）()\- ]{0,10}(商城|官网|官方网站|首页|store|mall|home)/i,
 ];
 
 // Brand-page title pattern: "DeepSeek | 深度求索", "Claude | Anthropic" —
@@ -43,6 +47,25 @@ const URL_BLOCKLIST = [
   '163.com/dy/media',      // netease media-account homepages
 ];
 
+// Domain core word → Chinese/alternate brand aliases. Used to catch official
+// homepages whose titles are Chinese ("华为-构建万物互联的世界" on huawei.com).
+const BRAND_ALIASES: Record<string, string[]> = {
+  huawei: ['华为'],
+  xiaomi: ['小米'],
+  mi: ['小米'],
+  apple: ['苹果', 'iphone', 'ipad', 'macbook'],
+  tesla: ['特斯拉'],
+  deepseek: ['深度求索', 'deepseek'],
+  openai: ['openai', 'chatgpt', 'gpt'],
+  anthropic: ['anthropic', 'claude'],
+  claude: ['claude', 'anthropic'],
+  nvidia: ['英伟达'],
+  lenovo: ['联想'],
+  tencent: ['腾讯'],
+  alibaba: ['阿里巴巴', '阿里'],
+  baidu: ['百度'],
+};
+
 /**
  * Brand–domain homepage detection: e.g. "DeepSeek | 深度求索" with url deepseek.com.
  * Fires for homepage-like paths AND low-value official pages (download/docs/locale
@@ -55,14 +78,10 @@ function isBrandHomepage(title: string, url: string): boolean {
     const parsed = new URL(url);
     if (!['http:', 'https:'].includes(parsed.protocol)) return false;
 
-    // Path filter: homepage + download/docs/locale pages are low value;
-    // news/blog/press pages are kept
+    // Official news/blog/press pages are kept — everything else on a known brand
+    // domain is treated as an official/low-value page.
     const path = (parsed.pathname || '').toLowerCase();
-    if (path && path !== '/') {
-      const lowValuePath = ['/download', '/downloads', '/docs', '/zh', '/zh-cn', '/app', '/apps', '/profile'];
-      const isLowValuePath = lowValuePath.some(x => path === x || path.startsWith(x + '/'));
-      if (!isLowValuePath) return false;
-    }
+    if (/(^|\/)(news|blog|press)(\/|$)/.test(path)) return false;
 
     const host = parsed.hostname.toLowerCase().replace(/^(www|m|mobile)\./, '');
     // Extract the primary domain word, skipping TLDs and two-part suffixes (.com.cn, .co.uk…)
@@ -72,7 +91,24 @@ function isBrandHomepage(title: string, url: string): boolean {
       .pop() || '';
     if (!core || core.length < 3 || /^\d/.test(core)) return false;
 
-    return title.toLowerCase().includes(core);
+    const lowered = title.toLowerCase();
+    // Also treat hosts containing a known brand key as the brand domain
+    // (catches mirror/locale domains like aa-deepseek.com.cn).
+    const brandKey = Object.keys(BRAND_ALIASES).find(k => host.includes(k)) || '';
+    const aliases = BRAND_ALIASES[brandKey] || BRAND_ALIASES[core] || [];
+    const titleHit = lowered.includes(core) || aliases.some(alias => lowered.includes(alias.toLowerCase()));
+    if (!titleHit) return false;
+
+    // Known brand domain (has alias map): any non-news page is low value.
+    if (brandKey) return true;
+
+    // Generic brand homepage: only homepage + explicit low-value paths
+    if (path && path !== '/') {
+      const lowValuePath = ['/download', '/downloads', '/docs', '/zh', '/zh-cn', '/cn', '/en', '/about', '/company', '/index', '/home', '/app', '/apps', '/profile'];
+      const isLowValuePath = lowValuePath.some(x => path === x || path.startsWith(x + '/'));
+      if (!isLowValuePath) return false;
+    }
+    return true;
   } catch {
     return false;
   }

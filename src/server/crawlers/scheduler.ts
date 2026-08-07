@@ -32,7 +32,7 @@ const CRAWLERS: Record<string, CrawlerFn> = {
   'hacker-news': crawlHackerNews,
 };
 
-const CRAWL_INTERVAL = parseInt(process.env.CRAWL_INTERVAL_MS || '1800000');
+const CRAWL_INTERVAL = parseInt(process.env.CRAWL_INTERVAL_MS || '7200000');
 const RETRY_BACKOFF_BASE = 60000; // 1 min base
 
 let running = false;
@@ -210,12 +210,15 @@ async function saveTopic(
 ): Promise<void> {
   const normalizedTitle = normalizeTitle(raw.title);
 
-  // Check for existing topic within 2 hours
+  // Check for an existing topic within the 7-day active window. A topic that
+  // reappears while still active is the SAME topic (merge/update); only after it
+  // has been absent for 7 days (i.e. the system already treats it as ended) does
+  // a reappearance become a brand-new topic row.
   const existing = await prisma.topic.findFirst({
     where: {
       normalizedTitle,
       sourceId,
-      lastSeenAt: { gte: new Date(Date.now() - 2 * 3600_000) },
+      lastSeenAt: { gte: new Date(Date.now() - 7 * 24 * 3600_000) },
     },
   });
 
