@@ -1,6 +1,7 @@
 import prisma from '../db.js';
 import { aiChat, MODELS } from './client.js';
 import { broadcastAlert, broadcastNewTopic } from '../socket.js';
+import { defaultIntent } from '../crawlers/keyword-queries.js';
 
 // ── Config ──
 // Heat-score-driven velocity: growthRate% × √heatScore × source diversity (÷10 for scale).
@@ -20,8 +21,47 @@ interface RelevanceResult {
   reason: string | null;
 }
 
+export interface RelevanceInput {
+  title: string;
+  snippet?: string | null;
+  source?: string | null;
+}
+
+export function buildRelevancePrompt(
+  items: RelevanceInput[],
+  kwList: string[],
+  intentMap: Map<string, string>,
+): string {
+  return `你是一个关键词匹配引擎。逐条判断以下内容标题是否与指定关键词语义相关。
+
+关键词及其关注意图:
+${kwList.map((kw) => `- ${kw}：${intentMap.get(kw) ?? defaultIntent(kw)}`).join('\n')}
+
+规则：
+- 结合关键词意图判断，语义相关即可（不需要出现原词，例如关键词"半导体"应匹配"台积电3nm量产"）
+- 标题包含关键词不等于相关（例如"半导体照明"对芯片产业不相关），需结合意图与摘要判断
+- 完全不相关才判定为不匹配
+- 有摘要时优先结合摘要判断，标题相似但摘要无关的应判为不相关
+- 标题信息不足时，以摘要为主要判断依据（例如标题只有"AI新品"，摘要描述模型能力则应判相关）
+- 营销活动、展会、娱乐内容若无明确产业动态或公司信息，判为不相关
+- 教程/技巧、二手回收、第三方改装等非产业信息，除非涉及上市公司公告或重大产业动态，判为不相关
+- 逐条对应输入顺序返回
+- 每条附带一句简短匹配理由（15-25字，中文）
+
+内容标题列表:
+${items.map((item, idx) => {
+    let line = `[${idx}] 标题：${item.title}`;
+    if (item.snippet) line += `\n    摘要：${item.snippet}`;
+    if (item.source) line += `\n    来源：${item.source}`;
+    return line;
+  }).join('\n')}
+
+返回 JSON：
+{"results": [{"index": 0, "relevant": true/false, "matchedKeyword": "匹配到的关键词或null", "confidence": 0.0-1.0, "reason": "匹配理由"}]}`;
+}
+
 export async function checkKeywordRelevance(title: string): Promise<RelevanceResult> {
-  const [result] = await checkKeywordRelevanceBatch([title]);
+  const [result] = await checkKeywordRelevanceBatch([{ title }]);
   return result ?? { relevant: false, matchedKeyword: null, confidence: 0, reason: null };
 }
 
@@ -30,42 +70,23 @@ export async function checkKeywordRelevance(title: string): Promise<RelevanceRes
  * Returns null for titles whose AI call failed (caller must NOT delete those — they
  * get retried next round rather than being dropped on a transient AI error).
  */
-export async function checkKeywordRelevanceBatch(titles: string[]): Promise<Array<RelevanceResult | null>> {
-  if (!titles.length) return [];
+export async function checkKeywordRelevanceBatch(items: RelevanceInput[]): Promise<Array<RelevanceResult | null>> {
+  if (!items.length) return [];
 
   const keywords = await prisma.keyword.findMany({ where: { isActive: true } });
-  if (!keywords.length) return titles.map(() => ({ relevant: false, matchedKeyword: null, confidence: 0, reason: null }));
+  if (!keywords.length) return items.map(() => ({ relevant: false, matchedKeyword: null, confidence: 0, reason: null }));
 
   const kwList = keywords.map(k => k.keyword);
+  const intentMap = new Map(keywords.map(k => [k.keyword, k.intentContext || defaultIntent(k.keyword)]));
 
-  // Fast path: exact string match
-  const results: Array<RelevanceResult | null> = titles.map((title) => {
-    for (const kw of kwList) {
-      if (title.includes(kw)) {
-        return { relevant: true, matchedKeyword: kw, confidence: 1.0, reason: `标题直接包含关键词「${kw}」` };
-      }
-    }
-    return null; // no exact match — needs AI judgement
-  });
-
-  const aiNeeded = titles.map((t, i) => ({ title: t, idx: i })).filter((_, i) => results[i] === null);
+  // Fast path removed: string containment is a strong signal but not a verdict
+  // (e.g. "半导体照明" contains the keyword but is off-topic). Every title now
+  // goes through AI judgement; failures stay null and are retried next round.
+  const results: Array<RelevanceResult | null> = items.map(() => null);
+  const aiNeeded = items.map((item, idx) => ({ item, idx }));
   if (!aiNeeded.length) return results;
 
-  const prompt = `你是一个关键词匹配引擎。逐条判断以下内容标题是否与指定关键词语义相关。
-
-关键词列表: ${kwList.join(', ')}
-
-规则：
-- 语义相关即可（不需要出现原词，例如关键词"半导体"应匹配"台积电3nm量产"）
-- 完全不相关才判定为不匹配
-- 逐条对应输入顺序返回
-- 每条附带一句简短匹配理由（15-25字，中文）
-
-内容标题列表:
-${aiNeeded.map(({ idx, title }) => `[${idx}] "${title}"`).join('\n')}
-
-返回 JSON：
-{"results": [{"index": 0, "relevant": true/false, "matchedKeyword": "匹配到的关键词或null", "confidence": 0.0-1.0, "reason": "匹配理由"}]}`;
+  const prompt = buildRelevancePrompt(aiNeeded.map((n) => n.item), kwList, intentMap);
 
   try {
     const result = await aiChat({
@@ -293,10 +314,15 @@ async function processChunk(
   chunk: Awaited<ReturnType<typeof prisma.topic.findMany>>[number][],
   batchNo: number,
   totalBatches: number,
+  sourceMap: Map<number, string>,
 ): Promise<{ kept: number; discarded: number; retried: number }> {
   const batchStart = Date.now();
   console.log(`[AI Pipeline] Batch ${batchNo}/${totalBatches} start ${new Date().toISOString().slice(11, 19)}...`);
-  const relevances = await checkKeywordRelevanceBatch(chunk.map(t => t.title));
+  const relevances = await checkKeywordRelevanceBatch(chunk.map(t => ({
+    title: t.title,
+    snippet: t.snippet,
+    source: sourceMap.get(t.sourceId) ?? null,
+  })));
 
   let kept = 0, discarded = 0, retried = 0;
 
@@ -389,6 +415,8 @@ export async function runAiPipeline(onProgress?: (progress: number) => void): Pr
     return { kept: 0, discarded: 0 };
   }
 
+  const sources = await prisma.source.findMany({ select: { id: true, name: true } });
+  const sourceMap = new Map(sources.map(s => [s.id, s.name]));
   let kept = 0, discarded = 0, retried = 0;
 
   // Stage 1+2: keyword relevance (GATE) with verify, processed 2 batches concurrently.
@@ -399,8 +427,8 @@ export async function runAiPipeline(onProgress?: (progress: number) => void): Pr
     const chunkA = rawTopics.slice(i, i + BATCH_SIZE);
     const chunkB = rawTopics.slice(i + BATCH_SIZE, i + BATCH_SIZE * 2);
     const [resA, resB] = await Promise.all([
-      processChunk(chunkA, batchNo, totalBatches),
-      chunkB.length ? processChunk(chunkB, batchNo + 1, totalBatches) : Promise.resolve({ kept: 0, discarded: 0, retried: 0 }),
+      processChunk(chunkA, batchNo, totalBatches, sourceMap),
+      chunkB.length ? processChunk(chunkB, batchNo + 1, totalBatches, sourceMap) : Promise.resolve({ kept: 0, discarded: 0, retried: 0 }),
     ]);
     kept += resA.kept + resB.kept;
     discarded += resA.discarded + resB.discarded;

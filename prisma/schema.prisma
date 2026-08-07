@@ -16,6 +16,8 @@ model Keyword {
   priority        Int      @default(0)
   growthThreshold Float    @default(0.15)
   searchQueries   String?  // JSON array of English search queries (cached, builtin map + LLM-generated)
+  intentContext   String?  // AI 生成的关键词意图上下文（投资语境/关联方向）
+  zhExpansionQueries String? // JSON array of Chinese expansion queries (domestic channels)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -64,6 +66,8 @@ model Topic {
   matchReason     String?   // AI: short reason why this topic matches a keyword
   matchConfidence Float?    // AI: relevance confidence 0-1
   engagement      String?   // JSON: per-source engagement breakdown (views/comments/etc.)
+  snippet         String?   // search-result snippet used by relevance judgement/eval
+  searchQuery     String?   // the exact query that surfaced this topic
   firstSeenAt     DateTime
   lastSeenAt      DateTime
   publishedAt     DateTime? // original publish time from the source (null when unknown)

@@ -1,6 +1,6 @@
 # PulseAI 热点监控工具 — 架构设计文档
 
-> 版本: v3.2 | 2026-08-07 | 技术栈已按实际运行状态验证
+> 版本: v3.3 | 2026-08-07 | 技术栈已按实际运行状态验证
 
 ---
 
@@ -71,6 +71,8 @@
 > 微博搜索接口被风控（432/403），仅保留热榜通道。
 
 > **v3.2**：各爬虫额外输出结构化互动明细（`engagement` JSON）——微博 `hot/tag`、百度 `hotScore`、B站 `views/danmaku/comments/favorites/likes`、HN `points/comments`；36氪/搜狗/Bing/通用搜索无互动数据，不写入。前端按来源展示主指标与详情分项。
+
+> **v3.3**：国内搜索渠道启用中文扩展查询（原词 + 轮换变体），HN 继续使用英文翻译词；新增关键词意图上下文 `intentContext` 与命中搜索词 `searchQuery`；各来源摘要存入 `Topic.snippet`，相关性判定输入升级为“意图 + 标题 + 摘要 + 来源”。
 
 ### 3.2 关键词 → 搜索词映射
 
@@ -145,7 +147,9 @@ Stage 1: 关键词相关性判定（GATE）     ← deepseek-flash
   批量 12 条/批 × 并发 2 路
   不相关 → deleteMany（容错并发删除）
   AI 失败 → retried（留待下轮，不误删）
+  输入: 关键词意图 + 标题 + 摘要 + 来源（结构化多行 prompt，v3.3）
   输出: relevant + matchedKeyword + confidence + reason（15-25 字理由）
+  快路径已移除：标题含关键词仍需 AI 复核
       │
       ▼
 Stage 2: 内容验证 verify（仅可能入榜） ← deepseek-flash
@@ -182,7 +186,7 @@ Stage 3: 定级 classifyTiers          ← 本地计算（无 AI）
 
 | 层 | 规则 | 示例 |
 |----|------|------|
-| 标题包含 | 百科/词典/单词/是什么/什么是/什么叫/官网/官方下载/下载/指南/教程/保姆级/新闻资讯/最新资讯/娱乐看猫眼… | Film_百度百科、什么是半导体 |
+| 标题包含 | 百科/词典/单词/是什么/什么是/什么叫/官网/官方下载/下载/指南/教程/技巧/保姆级/新闻资讯/最新资讯/娱乐看猫眼… | Film_百度百科、什么是半导体、DeepSeek 使用技巧 |
 | 标题正则 | `下载(?!量)`（排除"下载量"）、短"A \| B"品牌页 | Download Claude |
 | URL 黑名单 | baike.baidu.com / zhihu.com/topic / dramx.com / 163.com/dy/media… | 全球半导体观察 |
 | 品牌-域名 | 标题词 ∩ 域名核心词，且路径为首页/下载/文档/语言页 | DeepSeek \| 深度求索（deepseek.com）、claude.com/download |
@@ -203,6 +207,8 @@ model Keyword {
   priority      Int      @default(0)
   growthThreshold Float  @default(0.15)
   searchQueries String?  // 英文搜索词缓存（JSON 数组）
+  intentContext String?  // 关键词意图上下文（投资语境/关联方向，AI 生成缓存）
+  zhExpansionQueries String? // 中文扩展查询词（JSON 数组，国内渠道用）
 }
 
 model Topic {
@@ -222,6 +228,8 @@ model Topic {
   matchReason     String?                   // AI 匹配理由（15-25 字）
   matchConfidence Float?                    // AI 匹配置信度 0-1
   engagement      String?                   // 互动明细 JSON（views/comments/points...）
+  snippet         String?                   // 搜索结果摘要（判定与测试用）
+  searchQuery     String?                   // 实际命中的搜索词（追踪误判来源）
   aiSummary       String?                   // 已停写，待删列
   aiCategory      String?                   // 已停写，待删列
   tier            String?                   // burst | hot | rising | null
@@ -258,6 +266,7 @@ model Alert {
 | backfill_recommend_score | 存量话题回填综合推荐分 |
 | fix_backfill_recommend_score | 修正回填（epoch 毫秒新鲜度计算） |
 | add_topic_engagement_signals | Topic.matchReason / matchConfidence / engagement / isActionable |
+| add_search_context_and_snippet | Keyword.intentContext / zhExpansionQueries；Topic.snippet / searchQuery |
 
 ---
 
@@ -341,13 +350,14 @@ src/
 │   ├── crawlers/
 │   │   ├── scheduler.ts       # 调度 + running 锁 + 衰减 + 内容过滤入口 + 扫描进度状态
 │   │   ├── content-filter.ts  # 低价值规则过滤（v3 新增）
-│   │   ├── keyword-queries.ts # 关键词→英文搜索词（v3 新增）
+│   │   ├── keyword-queries.ts # 英文搜索词 + 意图上下文 + 中文扩展词（v3.3）
 │   │   ├── hacker-news.ts     # HN 源（v3 新增）
 │   │   ├── weibo/baidu/bilibili/kr36/sogou/bing/web-search.ts
 │   │   └── utils.ts           # heatScore 公式 + normalizeTitle + UA
 │   ├── ai/
 │   │   ├── client.ts          # OpenRouter SDK（chatRequest 包装 + 超时 + 围栏剥离）
-│   │   └── pipeline.ts        # 批量相关性（并发2路）→ verify（子集）→ classifyTiers
+│   │   ├── pipeline.ts        # 批量相关性（并发2路）→ verify（子集）→ classifyTiers
+│   │   └── eval/              # 相关性评估（黄金用例跑分 + AI 生成候选用例）
 │   ├── routes/                # keywords/topics/alerts/sources/settings/stats/agent
 │   └── notifications/         # browser.ts / email.ts
 ├── client/src/
@@ -355,12 +365,13 @@ src/
 │   ├── components/            # KpiRow/TopicRow/ScanStatusBar/VelocityGrid/TopicDetailChart 等
 │   ├── utils/format.ts        # 热度/互动量格式化 + 按来源主指标/分项
 │   └── hooks/                 # useApi / useSocket
-└── shared/types.ts
+├── shared/types.ts
+└── tests/                     # 单元/集成测试 + relevance 黄金用例（68 条）
 ```
 
 ---
 
-## 11. 关键设计决策（v3.2）
+## 11. 关键设计决策（v3.3）
 
 1. **got + cheerio 而非 axios**：功能等价、内置重试/超时，保持现有稳定实现
 2. **双热度体系**：热力值（0-100 阈值/详情页）+ 热度值（无界真实量级）分离，避免归一化抹平量级
@@ -383,3 +394,7 @@ src/
 19. **扫描状态可观测**：内存级 CrawlStatus + REST 轮询 + Socket 推送；进度 = 爬取 0-80% + AI 82-98% + 完成 100%
 20. **废弃字段先停写后删列**：aiSummary/aiCategory/rawHeat 停止写入并从 API 移除，列保留待后续 migration 删除
 21. **榜单排名防误导**：仅微博/百度/B站热榜前 10 显示 #N，搜索/快讯源的序号不当作排名展示
+22. **中文扩展与英文翻译分离**：国内渠道用 `zhExpansionQueries`（原词恒在 + 变体轮换），HN 用英文 `searchQueries`；记录命中词 `searchQuery` 用于追踪误判来源
+23. **意图上下文驱动**：`intentContext` 同时服务扩展词生成与相关性判定，并可用显式排除（二手回收/教程技巧/第三方改装/营销活动）收紧边界
+24. **判定输入结构化**：标题/摘要/来源/意图分开展示，摘要作为标题不足时的主要依据；移除“标题含词即放行”快路径（评估实测精确率 72.7% → 88.9%）
+25. **评估体系可量化**：68 条黄金用例 + 单元/集成测试 + `npm run eval:relevance` 输出 P/R/F1、混淆矩阵与错误样例，所有改动先跑分后上线

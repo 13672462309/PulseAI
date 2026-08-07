@@ -1,6 +1,7 @@
 import got from 'got';
 import prisma from '../db.js';
 import { calcHeatScore, randomUA, type CrawlerItem } from './utils.js';
+import { selectQueriesForChannel, currentExpansionRound } from './keyword-queries.js';
 
 interface BiliVideo {
   title: string;
@@ -22,6 +23,7 @@ interface BiliSearchVideo {
   bvid: string;
   arcurl?: string;
   pubdate?: number;
+  description?: string;
   play: number;
   like: number;
   review: number;
@@ -108,37 +110,51 @@ export async function crawlBilibili(): Promise<CrawlerItem[]> {
     if (keywords.length) {
       const cookie = await getBuvidCookie();
       if (cookie) {
-        const searchResults: Array<{ title: string; url: string; rawHeat: number; engagement: Record<string, number | string | null>; pubdate?: number }> = [];
+        const searchResults: Array<{
+          title: string;
+          url: string;
+          rawHeat: number;
+          engagement: Record<string, number | string | null>;
+          snippet: string | null;
+          searchQuery: string;
+          pubdate?: number;
+        }> = [];
         for (const kw of keywords) {
-          try {
-            const resp = await got(`https://api.bilibili.com/x/web-interface/search/type?search_type=video&keyword=${encodeURIComponent(kw.keyword)}&page=1&order=totalrank`, {
-              headers: {
-                'User-Agent': randomUA(),
-                'Referer': 'https://www.bilibili.com/',
-                'Accept': 'application/json',
-                'Cookie': cookie,
-              },
-              timeout: { request: 12000 },
-              retry: { limit: 1 },
-            }).json<BiliSearchResponse>();
+          const queries = await selectQueriesForChannel(kw.keyword, 'zh', currentExpansionRound(), 2);
+          for (const query of queries) {
+            try {
+              const resp = await got(`https://api.bilibili.com/x/web-interface/search/type?search_type=video&keyword=${encodeURIComponent(query)}&page=1&order=totalrank`, {
+                headers: {
+                  'User-Agent': randomUA(),
+                  'Referer': 'https://www.bilibili.com/',
+                  'Accept': 'application/json',
+                  'Cookie': cookie,
+                },
+                timeout: { request: 12000 },
+                retry: { limit: 1 },
+              }).json<BiliSearchResponse>();
 
-            if (resp.code === 0 && resp.data?.result) {
-              for (const v of resp.data.result.slice(0, 5)) {
-                // strip <em class="keyword"> highlight tags from titles
-                const title = v.title.replace(/<[^>]+>/g, '').trim();
-                if (!title) continue;
-                searchResults.push({
-                  title,
-                  url: v.arcurl || `https://www.bilibili.com/video/${v.bvid}`,
-                  rawHeat: v.play + v.like * 2 + v.review * 3,
-                  engagement: { views: v.play, likes: v.like, comments: v.review },
-                  pubdate: v.pubdate,
-                });
+              if (resp.code === 0 && resp.data?.result) {
+                for (const v of resp.data.result.slice(0, 5)) {
+                  // strip <em class="keyword"> highlight tags from titles
+                  const title = v.title.replace(/<[^>]+>/g, '').trim();
+                  if (!title) continue;
+                  const snippet = v.description ? stripHtml(v.description).slice(0, 160) : null;
+                  searchResults.push({
+                    title,
+                    url: v.arcurl || `https://www.bilibili.com/video/${v.bvid}`,
+                    rawHeat: v.play + v.like * 2 + v.review * 3,
+                    engagement: { views: v.play, likes: v.like, comments: v.review },
+                    snippet,
+                    searchQuery: query,
+                    pubdate: v.pubdate,
+                  });
+                }
               }
+              await sleep(400); // avoid search rate limiting
+            } catch (err) {
+              console.warn(`[Bilibili] Search failed for "${query}":`, (err as Error).message?.slice(0, 80));
             }
-            await sleep(400); // avoid search rate limiting
-          } catch (err) {
-            console.warn(`[Bilibili] Search failed for "${kw.keyword}":`, (err as Error).message?.slice(0, 80));
           }
         }
 
@@ -152,6 +168,8 @@ export async function crawlBilibili(): Promise<CrawlerItem[]> {
             heatIndex: Math.round((r.rawHeat / maxRaw) * 100),
             heatScore: calcHeatScore(r.rawHeat),
             engagement: r.engagement,
+            snippet: r.snippet,
+            searchQuery: r.searchQuery,
             publishedAt: r.pubdate ? r.pubdate * 1000 : null,
           });
         }
@@ -166,4 +184,8 @@ export async function crawlBilibili(): Promise<CrawlerItem[]> {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function stripHtml(s: string): string {
+  return s.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 }

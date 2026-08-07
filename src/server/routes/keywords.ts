@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../db.js';
-import { getSearchQueries } from '../crawlers/keyword-queries.js';
+import { getSearchQueries, getIntentContext, getZhExpansionQueries } from '../crawlers/keyword-queries.js';
 
 export const keywordsRouter = Router();
 
@@ -34,6 +34,9 @@ keywordsRouter.post('/', async (req: Request, res: Response) => {
 
     // Pre-warm English search queries (builtin map = free; LLM fallback for unmapped keywords)
     getSearchQueries(created.keyword).catch(() => {});
+    // Pre-warm intent context + Chinese expansion queries
+    getIntentContext(created.keyword).catch(() => {});
+    getZhExpansionQueries(created.keyword).catch(() => {});
 
     res.status(201).json(created);
   } catch (err: any) {
@@ -60,13 +63,15 @@ keywordsRouter.put('/:id', async (req: Request, res: Response) => {
         ...(keyword && { keyword: keyword.trim() }),
         ...(category !== undefined && { category }),
         ...(growthThreshold !== undefined && { growthThreshold }),
-        // Renaming invalidates cached search queries — regenerate
-        ...(renamed ? { searchQueries: null } : {}),
+        // Renaming invalidates cached search queries/intent/expansions — regenerate
+        ...(renamed ? { searchQueries: null, intentContext: null, zhExpansionQueries: null } : {}),
       },
     });
 
     if (renamed) {
       getSearchQueries(updated.keyword).catch(() => {});
+      getIntentContext(updated.keyword).catch(() => {});
+      getZhExpansionQueries(updated.keyword).catch(() => {});
     }
 
     res.json(updated);

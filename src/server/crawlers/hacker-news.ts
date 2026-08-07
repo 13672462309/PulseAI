@@ -1,7 +1,7 @@
 import got from 'got';
 import prisma from '../db.js';
 import { calcHeatScore, type CrawlerItem } from './utils.js';
-import { getSearchQueries } from './keyword-queries.js';
+import { selectQueriesForChannel, currentExpansionRound } from './keyword-queries.js';
 
 // HN scores are small (points/comments in the hundreds) — scale up to
 // an engagement-equivalent so the sqrt-compressed heatScore is comparable
@@ -12,6 +12,7 @@ interface HNHit {
   objectID: string;
   title: string;
   url?: string;
+  story_text?: string;
   points: number;
   num_comments: number;
   created_at: string;
@@ -34,7 +35,7 @@ export async function crawlHackerNews(): Promise<CrawlerItem[]> {
 
   for (const kw of keywords) {
     try {
-      const queries = await getSearchQueries(kw.keyword);
+      const queries = await selectQueriesForChannel(kw.keyword, 'hn', currentExpansionRound(), 1);
       const query = queries[0]; // one query per keyword per round keeps the API load low
       if (!query) continue;
 
@@ -65,8 +66,11 @@ export async function crawlHackerNews(): Promise<CrawlerItem[]> {
   const engagement = allHits.map(({ hit }) => hit.points + hit.num_comments * 2);
   const maxEngagement = Math.max(...engagement, 1);
 
-  return allHits.map(({ hit }, i) => {
+  return allHits.map(({ hit, query }, i) => {
     const score = hit.points + hit.num_comments * 2;
+    const snippet = hit.story_text
+      ? hit.story_text.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 160)
+      : null;
     return {
       title: hit.title.replace(/\s+/g, ' ').trim().slice(0, 160),
       url: hit.url || `https://news.ycombinator.com/item?id=${hit.objectID}`,
@@ -74,6 +78,8 @@ export async function crawlHackerNews(): Promise<CrawlerItem[]> {
       heatIndex: Math.round((score / maxEngagement) * 100),
       heatScore: calcHeatScore(score * HN_ENGAGEMENT_MULTIPLIER),
       engagement: { points: hit.points, comments: hit.num_comments },
+      snippet,
+      searchQuery: query,
       publishedAt: hit.created_at,
     };
   }).slice(0, 60);

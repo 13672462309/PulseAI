@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio';
 import got from 'got';
 import prisma from '../db.js';
 import { calcProxyHeatScore, randomUA, type CrawlerItem } from './utils.js';
+import { selectQueriesForChannel, currentExpansionRound } from './keyword-queries.js';
 
 /**
  * Bing web search. Queries EVERY active keyword each round —
@@ -10,7 +11,11 @@ import { calcProxyHeatScore, randomUA, type CrawlerItem } from './utils.js';
  */
 export async function crawlBing(): Promise<CrawlerItem[]> {
   const keywords = await prisma.keyword.findMany({ where: { isActive: true }, select: { keyword: true } });
-  const searchTerms = keywords.length > 0 ? keywords.map(k => k.keyword) : ['AI 热点'];
+  const searchTerms: string[] = [];
+  for (const kw of keywords) {
+    searchTerms.push(...(await selectQueriesForChannel(kw.keyword, 'zh', currentExpansionRound(), 2)));
+  }
+  if (!searchTerms.length) searchTerms.push('AI 热点');
 
   const items: CrawlerItem[] = [];
   const seen = new Set<string>();
@@ -29,14 +34,15 @@ export async function crawlBing(): Promise<CrawlerItem[]> {
       }).text();
 
       const $ = cheerio.load(html);
-      const found: Array<{ title: string; url: string }> = [];
+      const found: Array<{ title: string; url: string; snippet: string }> = [];
 
       $('.news-card, .b_news .newsitem, #b_results .b_algo').each((i, el) => {
         if (found.length >= 8) return false;
         const titleEl = $(el).find('h2 a, h3 a').first();
         const title = titleEl.text().trim();
         const link = titleEl.attr('href') || '';
-        if (title && title.length > 3) found.push({ title, url: link });
+        const snippet = $(el).find('.b_caption p, .b_snippet, .news_snpt').first().text().trim().slice(0, 160);
+        if (title && title.length > 3) found.push({ title, url: link, snippet });
       });
 
       for (const [i, f] of found.entries()) {
@@ -50,6 +56,8 @@ export async function crawlBing(): Promise<CrawlerItem[]> {
           rank: items.length + 1,
           heatIndex,
           heatScore: calcProxyHeatScore(heatIndex),
+          snippet: f.snippet || null,
+          searchQuery: term,
         });
       }
 

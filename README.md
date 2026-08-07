@@ -10,6 +10,10 @@
 - 📈 **潜力话题追踪** — 热度值增速（当前−初始）发现"正在变热"的话题，三级分类（🚀爆发/🔥热点/📈潜力）每轮重算可降级
 - 🤖 **AI 内容验证** — 批量判定（12条/批 × 并发2路）+ isVerified/isRumor/isActionable，入榜话题显示 ⚠️疑似谣言 / 值得关注
 - 🧠 **相关性理由 + 置信度** — 每条话题给出 15-25 字匹配理由，列表默认收起、点击展开；置信度常驻
+- 🔎 **全渠道查询扩展** — 国内渠道中文扩展词（原词 + 变体跨轮轮换），HN 英文翻译词轮换，记录命中搜索词
+- 🧭 **关键词意图上下文** — AI 生成投资语境说明（intentContext），参与扩展词生成与相关性判定
+- 📄 **摘要辅助判定** — 搜索结果摘要入库，AI 按“意图 + 标题 + 摘要 + 来源”判断相关性
+- 🧪 **相关性测试评估** — 单元/集成测试 + 68 条黄金用例 + `npm run eval:relevance`（P/R/F1 报告）
 - 📊 **原始互动量** — 微博热度/标签、百度搜索指数、B站播放/弹幕/评论/收藏/点赞、HN 分数/评论；卡片主指标 + 详情分项
 - 🏆 **榜单排名** — 微博/百度/B站热榜前 10 显示 `#N 来源`
 - 🚦 **扫描进度** — 全局进度条实时显示百分比、阶段、当前来源与已发现条数（REST + Socket）
@@ -41,6 +45,16 @@ npm run dev
 访问 http://localhost:5173 查看仪表盘。
 
 > 提示：`npm run dev` 使用 `tsx watch < NUL` 解决 Windows 下 concurrently 无终端导致后端挂起的问题。若仍有异常，可分开两个终端运行 `npm run dev:server` 与 `npm run dev:client`。
+
+## 测试与评估
+
+```bash
+npm test                    # 单元 + 集成测试（离线）
+npm run eval:relevance      # 相关性评分（真实 AI，68 条黄金用例，输出 P/R/F1 报告）
+npm run eval:golden:generate <关键词...>  # AI 生成候选用例（人工抽查后合并）
+```
+
+黄金用例位于 `tests/relevance/golden-cases.json`；评估报告输出到 `eval-reports/`（已 gitignore）。
 
 ## 数据源
 
@@ -77,8 +91,8 @@ npm run dev
 PulseAI/
 ├── src/
 │   ├── server/          # Express 后端
-│   │   ├── crawlers/    # 8 源爬虫 + 调度器 + 内容过滤 + 关键词搜索词
-│   │   ├── ai/          # OpenRouter 管线（批量相关性→验证→定级）
+│   │   ├── crawlers/    # 8 源爬虫 + 调度器 + 内容过滤 + 关键词扩展/意图/摘要
+│   │   ├── ai/          # OpenRouter 管线（批量相关性→验证→定级）+ eval 评估脚本
 │   │   ├── routes/      # REST API 端点
 │   │   └── notifications/ # Web Push + Email
 │   ├── client/          # React 前端
@@ -88,10 +102,11 @@ PulseAI/
 │   │       ├── utils/   # 热度/互动量格式化
 │   │       └── hooks/   # useApi, useSocket
 │   └── shared/          # 共享类型定义
+├── tests/               # 单元/集成测试 + 相关性黄金用例
 ├── agent-skill/         # Agent Skill 封装
-├── prisma/              # Schema + 10 个迁移
-├── REQUIREMENTS.md      # 需求文档（v3.2）
-└── DESIGN.md            # 架构设计文档（v3.2）
+├── prisma/              # Schema + 11 个迁移
+├── REQUIREMENTS.md      # 需求文档（v3.3）
+└── DESIGN.md            # 架构设计文档（v3.3）
 ```
 
 ## API 端点

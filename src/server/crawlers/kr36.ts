@@ -35,6 +35,7 @@ export async function crawl36Kr(): Promise<CrawlerItem[]> {
           heatIndex,
           heatScore: calcProxyHeatScore(heatIndex),
           publishedAt: item.published_at || null,
+          snippet: item.summary?.trim() || null,
         };
       });
     }

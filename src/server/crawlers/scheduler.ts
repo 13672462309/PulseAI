@@ -8,7 +8,7 @@ import { crawlWebSearch } from './web-search.js';
 import { crawlBing } from './bing.js';
 import { crawlSogou } from './sogou.js';
 import { crawlHackerNews } from './hacker-news.js';
-import { ensureAllSearchQueries } from './keyword-queries.js';
+import { ensureAllSearchQueries, ensureAllSearchContext } from './keyword-queries.js';
 import { isLowValueContent } from './content-filter.js';
 import { normalizeTitle, type CrawlerItem } from './utils.js';
 import { broadcastNewTopic, broadcastSourceStatus, broadcastCrawlStatus } from '../socket.js';
@@ -240,6 +240,8 @@ async function saveTopic(
         ...(raw.heatScore != null && existing.prevHeatScore == null ? { prevHeatScore: raw.heatScore } : {}),
         // Keep the original publish time if the source provides one (never overwrite with null)
         ...(raw.publishedAt != null ? { publishedAt: toDate(raw.publishedAt) } : {}),
+        ...(raw.snippet != null ? { snippet: raw.snippet } : {}),
+        ...(raw.searchQuery != null ? { searchQuery: raw.searchQuery } : {}),
         engagement: raw.engagement ? JSON.stringify(raw.engagement) : null,
         growthRate,
         lastSeenAt: new Date(),
@@ -271,6 +273,8 @@ async function saveTopic(
         heatScore: raw.heatScore,
         prevHeatScore: raw.heatScore, // first observation becomes the growth baseline
         engagement: raw.engagement ? JSON.stringify(raw.engagement) : null,
+        snippet: raw.snippet ?? null,
+        searchQuery: raw.searchQuery ?? null,
         publishedAt: toDate(raw.publishedAt),
         firstSeenAt: new Date(),
         lastSeenAt: new Date(),
@@ -362,6 +366,9 @@ export function startScheduler(): void {
   // Backfill search queries for keywords without a cached mapping (lazy generation)
   ensureAllSearchQueries().catch((err) => {
     console.error('[Scheduler] Keyword query backfill error:', err);
+  });
+  ensureAllSearchContext().catch((err) => {
+    console.error('[Scheduler] Search context backfill error:', err);
   });
 
   // Run immediately on start (guarded by `running` so the interval never overlaps)

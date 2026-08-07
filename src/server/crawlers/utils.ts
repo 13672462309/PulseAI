@@ -16,6 +16,8 @@ export interface CrawlerItem {
   heatScore: number | null;
   publishedAt?: number | string | Date | null;
   engagement?: Record<string, number | string | null> | null;
+  snippet?: string | null;
+  searchQuery?: string | null;
 }
 // ── Absolute heat score (0 ~ thousands) ──
 // heatScore = sqrt(weighted engagement) / 2 — sqrt compression keeps the scale

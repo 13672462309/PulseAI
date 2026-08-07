@@ -13,7 +13,7 @@ const TITLE_BLOCKLIST = [
   // app-download style titles ("下载DeepSeek App_...", "Download Claude | ...")
   'App_', 'Download',
   // tutorials / how-to content
-  '保姆级', '教程', '速通', '教学', '手把手', '从零开始', '零基础', '免费使用',
+  '保姆级', '教程', '技巧', '速通', '教学', '手把手', '从零开始', '零基础', '免费使用',
   // how-to guides / mirror sites ("Claude 新手指南", "国内使用指南", "镜像站")
   '指南', '镜像站',
   // video-site / portal channel pages ("爱奇艺-电影频道", "豆瓣电影", "免费电影在线观看")

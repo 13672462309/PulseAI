@@ -42,6 +42,7 @@ export async function crawlBaidu(): Promise<CrawlerItem[]> {
         heatIndex: rawHeat ? Math.round((rawHeat / maxHeat) * 100) : Math.max(5, 100 - i * 3),
         heatScore: rawHeat ? calcHeatScore(rawHeat) : null,
         engagement: rawHeat != null ? { hotScore: rawHeat } : null,
+        snippet: item.desc?.trim() || null,
       };
     }).filter(t => t.title);
   } catch (err) {

@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio';
 import got from 'got';
 import prisma from '../db.js';
 import { calcProxyHeatScore, randomUA, type CrawlerItem } from './utils.js';
+import { selectQueriesForChannel, currentExpansionRound } from './keyword-queries.js';
 
 const CAPTCHA_MARKERS = ['验证码', 'antispider', '请输入上图中', '安全验证'];
 
@@ -43,49 +44,61 @@ export async function crawlSogou(): Promise<CrawlerItem[]> {
   try {
     const keywords = await prisma.keyword.findMany({ where: { isActive: true }, select: { keyword: true } });
     for (const kw of keywords) {
-      try {
-        const html = await got(`https://www.sogou.com/web?query=${encodeURIComponent(kw.keyword)}`, {
-          headers: {
-            'User-Agent': randomUA(),
-            'Accept': 'text/html',
-            'Accept-Language': 'zh-CN,zh;q=0.9',
-          },
-          timeout: { request: 12000 },
-          retry: { limit: 1 },
-        }).text();
+      const queries = await selectQueriesForChannel(kw.keyword, 'zh', currentExpansionRound(), 2);
+      let captcha = false;
+      for (const query of queries) {
+        try {
+          const html = await got(`https://www.sogou.com/web?query=${encodeURIComponent(query)}`, {
+            headers: {
+              'User-Agent': randomUA(),
+              'Accept': 'text/html',
+              'Accept-Language': 'zh-CN,zh;q=0.9',
+            },
+            timeout: { request: 12000 },
+            retry: { limit: 1 },
+          }).text();
 
-        // Captcha / anti-bot detection → skip search channel entirely
-        if (CAPTCHA_MARKERS.some((m) => html.includes(m))) {
-          console.warn(`[Sogou] Captcha detected for "${kw.keyword}", skipping search channel`);
-          break;
-        }
+          // Captcha / anti-bot detection → skip search channel entirely
+          if (CAPTCHA_MARKERS.some((m) => html.includes(m))) {
+            console.warn(`[Sogou] Captcha detected for "${query}", skipping search channel`);
+            captcha = true;
+            break;
+          }
 
-        const $ = cheerio.load(html);
-        const items: Array<{ title: string; url: string }> = [];
-        $('h3 a').each((i, el) => {
-          if (i >= 5) return false;
-          const title = $(el).text().trim();
-          let href = $(el).attr('href') || '';
-          if (!href) return;
-          // sogou returns relative redirect links — resolve against the site
-          if (href.startsWith('/')) href = 'https://www.sogou.com' + href;
-          if (title.length > 3) items.push({ title, url: href });
-        });
-
-        for (const [i, item] of items.entries()) {
-          const heatIndex = Math.max(5, 85 - i * 3);
-          results.push({
-            title: item.title,
-            url: item.url,
-            rank: 31 + i,
-            heatIndex,
-            heatScore: calcProxyHeatScore(heatIndex),
+          const $ = cheerio.load(html);
+          const items: Array<{ title: string; url: string; snippet: string }> = [];
+          $('h3 a').each((i, el) => {
+            if (i >= 5) return false;
+            const title = $(el).text().trim();
+            let href = $(el).attr('href') || '';
+            if (!href) return;
+            // sogou returns relative redirect links — resolve against the site
+            if (href.startsWith('/')) href = 'https://www.sogou.com' + href;
+            if (title.length > 3) {
+              const block = $(el).closest('.vrwrap, li, .rb');
+              const snippet = block.find('p, .fz-mid, .str_info, .text-layout').first().text().trim().slice(0, 160);
+              items.push({ title, url: href, snippet });
+            }
           });
+
+          for (const [i, item] of items.entries()) {
+            const heatIndex = Math.max(5, 85 - i * 3);
+            results.push({
+              title: item.title,
+              url: item.url,
+              rank: 31 + i,
+              heatIndex,
+              heatScore: calcProxyHeatScore(heatIndex),
+              snippet: item.snippet || null,
+              searchQuery: query,
+            });
+          }
+          await sleep(600); // sogou rate-limits aggressively
+        } catch (err) {
+          console.warn(`[Sogou] Search failed for "${query}":`, (err as Error).message?.slice(0, 80));
         }
-        await sleep(600); // sogou rate-limits aggressively
-      } catch (err) {
-        console.warn(`[Sogou] Search failed for "${kw.keyword}":`, (err as Error).message?.slice(0, 80));
       }
+      if (captcha) break;
     }
   } catch (err) {
     console.error('[Sogou] Keyword search channel error:', err);
