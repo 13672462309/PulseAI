@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildSecid } from '../../src/server/stocks/provider.js';
 import { seedCompaniesForKeyword, findSeedCompany } from '../../src/server/stocks/company-map.js';
-import { computeMetrics, retryWithBackoff } from '../../src/server/stocks/pipeline.js';
+import { computeMetrics, retryWithBackoff, chinaDayStartMs } from '../../src/server/stocks/pipeline.js';
 
 test('buildSecid maps A股 codes to eastmoney secids', () => {
   assert.equal(buildSecid('600519'), '1.600519');
@@ -55,4 +55,15 @@ test('retryWithBackoff retries transient failures and gives up bounded', async (
   };
   assert.equal(await retryWithBackoff(alwaysNull, 2, [0]), null);
   assert.equal(nullCalls, 2);
+});
+
+test('chinaDayStartMs returns the start of the current China calendar day', () => {
+  const now = Date.now();
+  const start = chinaDayStartMs(now);
+  assert.ok(start <= now);
+  assert.ok(now - start < 24 * 3600_000);
+  // a fixed instant (2026-08-10 15:00 +08) maps to 2026-08-10 00:00 +08
+  const fixed = Date.UTC(2026, 7, 10, 7, 0, 0); // 15:00 +08
+  const expected = Date.UTC(2026, 7, 9, 16, 0, 0); // 00:00 +08
+  assert.equal(chinaDayStartMs(fixed), expected);
 });

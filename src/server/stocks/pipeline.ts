@@ -15,7 +15,6 @@ import {
 
 const DAILY_TOPIC_LIMIT = Number(process.env.STOCK_DAILY_TOPIC_LIMIT || 50);
 const ROUND_LIMIT = 20;
-const REFRESH_CACHE_MS = 30 * 60_000;
 const RECAP_THRESHOLD = 1.5;
 const MAX_STOCKS_PER_TOPIC = 3;
 
@@ -45,6 +44,13 @@ export async function retryWithBackoff<T>(
     }
   }
   return null;
+}
+
+/** Start of the current China calendar day (UTC+8) in epoch ms. */
+export function chinaDayStartMs(now = Date.now()): number {
+  const CN_OFFSET_MS = 8 * 3600_000;
+  const nowCn = now + CN_OFFSET_MS;
+  return Math.floor(nowCn / 86400000) * 86400000 - CN_OFFSET_MS;
 }
 
 function parseDateKey(d: string): number {
@@ -219,12 +225,15 @@ export async function refreshStockLinks(): Promise<{ topics: number; links: numb
   if (!kwNames.length) return { topics: 0, links: 0 };
 
   const weekAgo = new Date(Date.now() - 7 * 24 * 3600_000);
-  const cacheCutoff = new Date(Date.now() - REFRESH_CACHE_MS);
+  // Same-day dedup: a topic whose stock links were fetched earlier TODAY (China
+  // calendar) is skipped entirely — no repeated LLM extraction / quote calls.
+  // Topics are processed again automatically on the next day.
+  const todayStart = new Date(chinaDayStartMs());
   const baseWhere: any = {
     isHidden: false,
     matchedKeyword: { in: kwNames },
     lastSeenAt: { gte: weekAgo },
-    stockLinks: { none: { fetchedAt: { gte: cacheCutoff } } },
+    stockLinks: { none: { fetchedAt: { gte: todayStart } } },
   };
 
   const [tiered, topHeat, eligibleTiered, eligibleTopHeat] = await Promise.all([
