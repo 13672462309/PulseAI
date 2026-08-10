@@ -47,6 +47,7 @@ ${kwList.map((kw) => `- ${kw}：${intentMap.get(kw) ?? defaultIntent(kw)}`).join
 - 教程/技巧、二手回收、第三方改装等非产业信息，除非涉及上市公司公告或重大产业动态，判为不相关
 - 逐条对应输入顺序返回
 - 每条附带一句简短匹配理由（15-25字，中文）
+- matchedKeyword 必须严格取自上面列表中的关键词原文，禁止使用别名、英文翻译或大小写/空格变体；无法确定时返回 null
 
 内容标题列表:
 ${items.map((item, idx) => {
@@ -58,6 +59,55 @@ ${items.map((item, idx) => {
 
 返回 JSON：
 {"results": [{"index": 0, "relevant": true/false, "matchedKeyword": "匹配到的关键词或null", "confidence": 0.0-1.0, "reason": "匹配理由"}]}`;
+}
+
+/**
+ * Normalize/validate the model's matchedKeyword against the active keyword list.
+ * The model may return aliases, English translations or case/whitespace variants
+ * ("DeepSeek" vs "deepseek", "华为公司" vs "华为") — storing them raw makes the
+ * topic unfindable because every list query filters by exact keyword match.
+ *
+ * Matching order:
+ * 1. exact match ignoring case/whitespace → canonical keyword text
+ * 2. returned label contains a keyword (longest contained keyword wins)
+ * 3. a keyword contains the returned label (shortest containing keyword wins)
+ * 4. no match → null (topic stays pending and is retried next round, never mislabeled)
+ */
+export function normalizeMatchedKeyword(
+  returned: string | null | undefined,
+  kwList: string[],
+): string | null {
+  const raw = (returned || '').trim();
+  if (!raw || !kwList.length) return null;
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, '');
+  const target = norm(raw);
+
+  // 1) exact match ignoring case/whitespace
+  for (const kw of kwList) {
+    if (norm(kw) === target) return kw;
+  }
+
+  // 2) returned label contains a keyword ("华为公司" → "华为"); longest wins
+  let contained: string | null = null;
+  for (const kw of kwList) {
+    const n = norm(kw);
+    if (n.length >= 2 && target.includes(n) && (!contained || n.length > norm(contained).length)) {
+      contained = kw;
+    }
+  }
+  if (contained) return contained;
+
+  // 3) a keyword contains the returned label ("ai" → "AI大模型"); shortest wins
+  let container: string | null = null;
+  for (const kw of kwList) {
+    const n = norm(kw);
+    if (target.length >= 2 && n.includes(target) && (!container || n.length < norm(container).length)) {
+      container = kw;
+    }
+  }
+  if (container) return container;
+
+  return null;
 }
 
 export async function checkKeywordRelevance(title: string): Promise<RelevanceResult> {
@@ -122,9 +172,15 @@ export async function checkKeywordRelevanceBatch(items: RelevanceInput[]): Promi
     for (const { idx } of aiNeeded) {
       const r = byIndex.get(idx);
       if (r) {
+        const canonical = normalizeMatchedKeyword(r.matchedKeyword, kwList);
+        if (r.relevant && r.matchedKeyword && !canonical) {
+          console.warn(
+            `[AI] matchedKeyword "${r.matchedKeyword}" not in active keywords [${kwList.join(', ')}]; keeping topic pending for retry`,
+          );
+        }
         results[idx] = {
           relevant: r.relevant,
-          matchedKeyword: r.matchedKeyword || null,
+          matchedKeyword: r.relevant ? canonical : null,
           confidence: r.confidence ?? 0,
           reason: typeof r.reason === 'string' && r.reason.trim() ? r.reason.trim() : null,
         };

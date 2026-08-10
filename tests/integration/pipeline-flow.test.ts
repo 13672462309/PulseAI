@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { isLowValueContent } from '../../src/server/crawlers/content-filter.js';
 import { selectQueriesForChannel } from '../../src/server/crawlers/keyword-queries.js';
-import { buildRelevancePrompt, type RelevanceInput } from '../../src/server/ai/pipeline.js';
+import { buildRelevancePrompt, normalizeMatchedKeyword, type RelevanceInput } from '../../src/server/ai/pipeline.js';
 
 test('zh channels get original keyword + rotated variant (builtin, offline)', async () => {
   const q0 = await selectQueriesForChannel('半导体', 'zh', 0, 2);
@@ -29,6 +29,22 @@ test('relevance prompt embeds intent, snippet and source', () => {
   assert.ok(prompt.includes('关注芯片设计/制造/设备/材料'));
   assert.ok(prompt.includes('摘要：产能爬坡带动设备订单增长'));
   assert.ok(prompt.includes('来源：Bing 搜索'));
+});
+
+test('matchedKeyword is normalized and validated against the keyword list', () => {
+  // case/whitespace variants map back to the canonical keyword text
+  assert.equal(normalizeMatchedKeyword('DeepSeek', ['deepseek']), 'deepseek');
+  assert.equal(normalizeMatchedKeyword('AI 大模型', ['AI大模型']), 'AI大模型');
+  assert.equal(normalizeMatchedKeyword(' 华为公司 ', ['华为']), '华为');
+  // containment fallbacks
+  assert.equal(normalizeMatchedKeyword('ai', ['AI大模型']), 'AI大模型');
+  assert.equal(normalizeMatchedKeyword('华为公司', ['华为', '华为公司']), '华为公司');
+  // unmappable aliases/translations → null (never store a mismatched label)
+  assert.equal(normalizeMatchedKeyword('semiconductor', ['半导体']), null);
+  assert.equal(normalizeMatchedKeyword('苹果', ['iphone']), null);
+  assert.equal(normalizeMatchedKeyword('', ['半导体']), null);
+  assert.equal(normalizeMatchedKeyword(null, ['半导体']), null);
+  assert.equal(normalizeMatchedKeyword('半导体', []), null);
 });
 
 test('simulated search → filter → judgement flow keeps relevant and drops noise', () => {
