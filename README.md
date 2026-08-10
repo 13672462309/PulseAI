@@ -10,6 +10,8 @@
 - 📈 **潜力话题追踪** — 热度值增速（当前−初始）发现"正在变热"的话题，三级分类（🚀爆发/🔥热点/📈潜力）每轮重算可降级
 - 🤖 **AI 内容验证** — 批量判定（12条/批 × 并发2路）+ isVerified/isRumor/isActionable，入榜话题显示 ⚠️疑似谣言 / 值得关注
 - 🧠 **相关性理由 + 置信度** — 每条话题给出 15-25 字匹配理由，列表默认收起、点击展开；置信度常驻
+- 📈 **话题-股价联动** — 入榜/热度前 10 话题自动关联 A股标的（东财行情 + 新浪降级），展示今日涨跌（掉出候选范围后显示"过去涨跌"）与 AI 复盘
+- 💬 **投资问答 Copilot** — 全局聊天浮窗，Socket.io 流式问答 + 工具调用（话题/统计/股价联动），会话持久化、断线自动重试
 - 🔎 **全渠道查询扩展** — 国内渠道中文扩展词（原词 + 变体跨轮轮换），HN 英文翻译词轮换，记录命中搜索词
 - 🧭 **关键词意图上下文** — AI 生成投资语境说明（intentContext），参与扩展词生成与相关性判定
 - 📄 **摘要辅助判定** — 搜索结果摘要入库，AI 按“意图 + 标题 + 摘要 + 来源”判断相关性
@@ -54,7 +56,7 @@ npm run dev
 ## 测试与评估
 
 ```bash
-npm test                    # 单元 + 集成测试（离线）
+npm test                    # 单元 + 集成测试（18 项，离线，含行情/聊天/过滤用例）
 npm run eval:relevance      # 相关性评分（真实 AI，68 条黄金用例，输出 P/R/F1 报告）
 npm run eval:golden:generate <关键词...>  # AI 生成候选用例（人工抽查后合并）
 ```
@@ -98,28 +100,30 @@ PulseAI/
 │   ├── server/          # Express 后端
 │   │   ├── crawlers/    # 8 源爬虫 + 调度器 + 内容过滤 + 关键词扩展/意图/摘要
 │   │   ├── ai/          # OpenRouter 管线（批量相关性→验证→定级）+ eval 评估脚本
+│   │   ├── agent/       # Copilot 问答（chat.ts 循环 + tools.ts 6 工具）
+│   │   ├── stocks/      # 股价联动（provider 东财/新浪 + company-map 种子映射 + pipeline）
 │   │   ├── routes/      # REST API 端点
 │   │   └── notifications/ # Web Push + Email
 │   ├── client/          # React 前端
 │   │   └── src/
 │   │       ├── pages/   # 仪表盘/话题/详情/关键词/源/设置
-│   │       ├── components/ # KpiRow / TopicRow / ScanStatusBar / VelocityGrid / TopicDetailChart / icons
+│   │       ├── components/ # KpiRow / TopicRow / ScanStatusBar / VelocityGrid / TopicDetailChart / ChatPanel / icons
 │   │       ├── utils/   # 热度/互动量格式化
 │   │       └── hooks/   # useApi, useSocket
 │   └── shared/          # 共享类型定义
 ├── tests/               # 单元/集成测试 + 相关性黄金用例
-├── scripts/             # 数据治理：官网/公司页清理、重复话题合并
+├── scripts/             # 数据治理：官网/公司页清理、品牌噪音清理、重复话题合并
 ├── agent-skill/         # Agent Skill 封装
-├── prisma/              # Schema + 13 个迁移
-├── REQUIREMENTS.md      # 需求文档（v3.4）
-└── DESIGN.md            # 架构设计文档（v3.4）
+├── prisma/              # Schema + 15 个迁移
+├── REQUIREMENTS.md      # 需求文档（v3.7）
+└── DESIGN.md            # 架构设计文档（v3.7）
 ```
 
 ## API 端点
 
 ```
 GET/POST    /api/v1/keywords          # 关键词管理（新词自动生成英文搜索词）
-GET         /api/v1/topics            # 话题列表（分页/筛选/排序，默认综合推荐；关键词/来源多选、发现时间范围）
+GET         /api/v1/topics            # 话题列表（分页/筛选/排序，默认综合推荐；关键词/来源多选、发现时间范围、hasStocks=1 仅看有股价联动）
 GET         /api/v1/topics/filter-options  # 筛选选项（关键词+来源，带计数）
 GET         /api/v1/topics/hot        # 热度榜（热度值降序，7天窗口）
 GET         /api/v1/topics/trending   # 增速榜（7天窗口）
@@ -130,6 +134,7 @@ GET         /api/v1/stats             # 仪表盘统计（KPI）
 GET         /api/v1/stats/velocity    # 增速 Top
 POST        /api/v1/crawl/trigger     # 手动触发（进行中返回 409）
 GET         /api/v1/crawl/status      # 扫描进度（百分比/阶段/当前来源/条数）
+POST        /api/v1/topics/:id/stocks/refresh  # 手动刷新话题股价联动
 GET/PUT     /api/v1/settings          # 系统设置
 GET         /api/v1/agent/*           # Agent 端点（搜索/趋势/状态）
 POST        /api/v1/agent/chat        # 投资问答 Copilot（SSE 流式 + 工具调用）

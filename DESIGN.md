@@ -1,6 +1,6 @@
 # PulseAI 热点监控工具 — 架构设计文档
 
-> 版本: v3.4 | 2026-08-07 | 技术栈已按实际运行状态验证
+> 版本: v3.7 | 2026-08-10 | 技术栈已按实际运行状态验证
 
 ---
 
@@ -18,17 +18,17 @@
                │  Vite proxy → Express :3456
 ┌──────────────▼──────────────────────────────────────────┐
 │       Backend: Express.js 5.x + TypeScript               │
-│       Socket.io Server                                   │
-│       node-cron 定时调度（30 min）+ 手动触发              │
-└──┬──────────┬──────────┬──────────┬─────────────────────┘
-   │          │          │          │
-┌──▼──┐  ┌───▼───┐  ┌──▼──┐  ┌───▼──────────┐
-│Crawler│  │  AI   │  │ Notif│  │ Storage      │
-│Engine │  │Pipeline│  │System│  │ Prisma+SQLite│
-│got    │  │OpenRtr│  │WebPush│  │ (WAL mode)   │
-│cheerio│  │批量/并发│  │nodemail│  │              │
-│8 源   │  │       │  │      │  │              │
-└───────┘  └───────┘  └──────┘  └──────────────┘
+│       Socket.io Server（实时事件 + Copilot 问答）          │
+│       node-cron 定时调度（2h）+ 手动触发                   │
+└──┬──────────┬──────────┬──────────┬──────────┬──────────┘
+   │          │          │          │          │
+┌──▼──┐  ┌───▼───┐  ┌───▼────┐  ┌──▼───┐  ┌──▼──────────┐
+│Crawler│  │  AI   │  │ Agent  │  │Stocks│  │ Storage      │
+│Engine │  │Pipeline│  │ Chat   │  │行情   │  │ Prisma+SQLite│
+│got    │  │OpenRtr│  │Socket  │  │东财   │  │ (WAL mode)   │
+│cheerio│  │批量/并发│  │工具调用 │  │新浪降级│  │              │
+│8 源   │  │       │  │        │  │      │  │              │
+└───────┘  └───────┘  └────────┘  └──────┘  └──────────────┘
 ```
 
 ---
@@ -44,11 +44,14 @@
 | **图表/动画** | Recharts / GSAP | — |
 | **后端** | Express.js 5.x | — |
 | **数据库** | Prisma 5 + SQLite (WAL) | — |
-| **实时通信** | Socket.io 4 | — |
+| **实时通信** | Socket.io 4 | 实时事件 + Copilot 问答传输（chat_request / chat_event） |
 | **爬虫** | got 15 + cheerio | 统一 HTTP 客户端（非 axios） |
-| **AI** | @openrouter/sdk + deepseek-v4-flash | 统一模型分级（fast/quality/free 均配 flash） |
+| **AI** | @openrouter/sdk + deepseek-v4-flash | 统一模型分级；Copilot 工具调用走 OpenAI 兼容流式 REST |
+| **行情数据源** | 东方财富（suggest/push2/push2his）+ 新浪 hq | 零 Key、零依赖；主源 + 降级 |
 | **调度** | node-cron + 手动触发 | running 锁防并发 |
-| **开发模式** | concurrently + `tsx watch < NUL` | stdin 重定向解决 Windows 挂起 |
+| **开发模式** | concurrently + `tsx watch --exclude ./dist --exclude ./data --exclude ./eval-reports < NUL` | 排除构建产物/数据库，避免生成中被重启 |
+
+> **Copilot 超时配置**：`AI_CHAT_TIMEOUT_MS`（单轮，默认 240s）/ `AI_CHAT_DEADLINE_MS`（整体，默认 300s）/ `VITE_AI_CHAT_CLIENT_TIMEOUT_MS`（前端看门狗，默认 320s，须大于后端）；股价联动 `STOCK_DAILY_TOPIC_LIMIT`（默认 50）。
 
 ---
 
@@ -180,6 +183,53 @@ Stage 3: 定级 classifyTiers          ← 本地计算（无 AI）
 | 删除时记录已不存在（P2025） | deleteMany 容错 |
 | 删除时告警外键冲突（P2003） | Alert.topicId 级联删除 |
 
+### 5.4 Copilot（投资问答 Agent，v3.6）
+
+```
+前端 ChatPanel（全局浮窗）
+      │  Socket.io: chat_request / chat_event
+      ▼
+Agent 循环（最多 3 轮工具调用，每轮流式）
+  工具: list_keywords / search_topics / get_topic_detail /
+        get_stats / get_trending / get_stock_links
+      │
+      ▼
+最终回答流式返回（deepseek-v4-flash，maxTokens 2048）
+```
+
+- 传输：Socket.io（`chat_request` → `chat_event`，按 requestId 关联），绕开 HTTP SSE 经开发代理不稳定问题；REST `POST /api/v1/agent/chat`（SSE）保留供调试
+- 会话：无状态，前端携带最近 10 条历史（`sanitizeHistory` 校验角色/长度），并持久化到 sessionStorage
+- 健壮性：单轮 240s / 整体 300s / 前端 320s 可配；429 → "问太快啦…"、5xx → "AI 服务暂时不可用"；客户端断开/停止自动 `chat_cancel` 中止后端；新提问自动顶掉残留旧请求
+- 成本：工具结果截断 4000 字符、消息上限 2000 字符、200s 无响应看门狗（前端）
+
+### 5.5 话题-股价联动（v3.7）
+
+```
+AI 管线完成
+      │
+      ▼
+候选话题: 入榜（burst/hot/rising）+ 热度值前 10
+      │
+      ▼
+LLM 提取公司名（标题+摘要，1-3 个，仅 A股）
+      │
+      ▼
+公司→代码: 种子映射表 → 东财 suggest 搜索兜底 → 关键词种子兜底
+      │
+      ▼
+行情: 东财 push2 批量实时报价（失败→新浪 hq 降级）
+      │
+      ▼
+写入 TopicStockLink（今日涨跌 + isStale）
+      │
+      ▼
+异动 ≥1.5% → AI 复盘（retryWithBackoff 3 次，仍失败留待下轮）
+```
+
+- 只保留今日涨跌幅（v3.7 简化：不再请求日 K 线，解决批量 K 线被风控导致 5日/发现后大量为空的问题）
+- 掉出候选范围的话题保留最后一次行情并标记 `isStale`，前端显示"过去涨跌：xxx%"
+- 频率与成本：每轮爬取后刷新、30 分钟缓存、每轮 20 话题、每日上限 50、每话题最多 3 只
+
 ---
 
 ## 6. 内容过滤（规则黑名单）
@@ -195,6 +245,14 @@ Stage 3: 定级 classifyTiers          ← 本地计算（无 AI）
 | 品牌-域名 | 中文别名映射 + 品牌域名（含镜像）除 news/blog/press 外全拦截 | 华为-构建万物互联的世界（huawei.com）、aa-deepseek.com.cn |
 
 设计原则：**宁可漏网不误杀**——知乎问答/深度文章、测评/实测内容、含"下载量"的新闻均保留。
+
+**v3.6/v3.7 增强**：
+
+- 搜索引擎跳转壳 URL 解码（`resolveSearchUrl`）：Bing `ck/a` 的 base64 `u=` 参数、百度/搜狗 `/link?url=` 还原真实域名后再做品牌检测；爬虫入库前也先解码
+- 搜狗 `/link?url=` 为不透明令牌：对疑似品牌/官方页标题用 HEAD 跟随重定向还原真实域名
+- 标题规则补充：`官方商城/商城首页/VMALL/请返回商城/品质保证/百强企业/7天退货/构建万物互联/Fully Connected/Intelligent World/Wikipedia/Guide` + 短标题"品牌+官方/商城"正则
+- 品牌库新增 `vmall`/`studio7`；URL 黑名单新增 `vmall.com/bnn.in.th/studio7online.com/wikipedia.org/play.google.com/istudio.store` 及旧的 Claude 发布公告页
+- 存量清理脚本 `scripts/cleanup-brand-noise.ts`（dry-run 默认，`--apply` 删除），共清理 31 条
 
 ---
 
@@ -243,6 +301,7 @@ model Topic {
   publishedAt     DateTime?                 // 原始发布时间（B站/36氪/HN 可采集，可空）
   recommendScore  Float?                    // 综合推荐分（级别权重+增速+热度+新鲜度）
   mentionCount    Int      @default(1)
+  stockRecap      String?                   // AI 生成的话题-股价关联复盘（异动时生成，缓存）
 }
 
 model TopicHistory {
@@ -250,6 +309,24 @@ model TopicHistory {
   heatIndex  Float
   heatScore  Float?   // 趋势图使用
   growthRate Float?
+}
+
+model TopicStockLink {
+  id                Int      @id @default(autoincrement())
+  topicId           Int
+  stockCode         String
+  stockName         String
+  exchange          String   @default("A股")
+  secid             String?  // 东财 secid，如 1.600519
+  price             Float?
+  pctToday          Float?   // 今日涨跌幅 %
+  pct5d             Float?   // 已停用（保留列）
+  pctSinceDiscovery Float?   // 已停用（保留列）
+  trendJson         String?  // 已停用（保留列）
+  isStale           Boolean  @default(false) // 掉出候选范围 → 显示"过去涨跌"
+  quoteTime         DateTime?
+  fetchedAt         DateTime @default(now())
+  @@unique([topicId, stockCode])
 }
 
 model Alert {
@@ -275,6 +352,8 @@ model Alert {
 | add_search_context_and_snippet | Keyword.intentContext / zhExpansionQueries；Topic.snippet / searchQuery |
 | add_verify_retry | Topic.verifyRetry（verify 失败重试标记） |
 | keyword_soft_delete_and_hide_topics | Keyword.deletedAt / Topic.isHidden（软删除 + 隐藏话题） |
+| add_topic_stock_links | TopicStockLink 表 + Topic.stockRecap（股价联动） |
+| topic_stock_link_stale | TopicStockLink.isStale（掉出候选范围标记"过去涨跌"） |
 
 ---
 
@@ -287,12 +366,13 @@ model Alert {
   POST        /api/v1/keywords/:id/pause
 
 话题
-  GET         /api/v1/topics              # 分页/筛选（tier/keyword/keywords/sources/since）/排序（recommendScore 默认，白名单）
+  GET         /api/v1/topics              # 分页/筛选（tier/keyword/keywords/sources/since/hasStocks）/排序（recommendScore 默认，白名单）
   GET         /api/v1/topics/filter-options  # 筛选选项（关键词+来源，带计数）
   GET         /api/v1/topics/hot          # 热度榜（heatScore desc，7天窗口）
   GET         /api/v1/topics/trending     # 增速榜（7天窗口）
-  GET         /api/v1/topics/:id          # 详情（含 history/heatScore 趋势）
+  GET         /api/v1/topics/:id          # 详情（含 history/heatScore 趋势/stockLinks/stockRecap）
   GET         /api/v1/topics/:id/history
+  POST        /api/v1/topics/:id/stocks/refresh  # 手动刷新某话题股价联动
 
 告警 / 数据源 / 设置 / 统计
   GET/POST    /api/v1/alerts ...
@@ -307,10 +387,12 @@ model Alert {
 
 Socket 事件
   new_topic / alert / source_status / crawl_status（扫描进度实时推送）
+  chat_request / chat_event（Copilot 问答，requestId 关联）
 
 Agent
   GET         /api/v1/agent/search|trending|status
   POST        /api/v1/agent/monitor
+  POST        /api/v1/agent/chat          # SSE 流式问答（前端已改用 Socket.io）
 ```
 
 ---
@@ -322,9 +404,10 @@ Agent
 | 路径 | 页面 | 要点 |
 |------|------|------|
 | `/` | DashboardPage | KPI行（7天活跃口径，可点击跳转筛选）+ 实时话题列表（TopicRow 一行一话题，heatScore 降序，7天窗口） |
-| `/topics` | TopicsPage | 筛选（发现时间范围/关键词多选/来源多选/级别）+ 排序（综合推荐/热度值/增速/热力值/连续上榜/最新发布/最新发现）+ 分页 + URL同步；TopicRow：榜单排名/互动量/AI 理由展开/热度值/增速 |
-| `/topics/:id` | TopicDetailPage | 渐变面积趋势图 + 级别徽章 + #关键词 + 谣言/值得关注标记 + AI 相关性分析（理由+置信度）+ 互动数据分项 + 热度值/热力值/增速 + 发布时间 |
+| `/topics` | TopicsPage | 筛选（发现时间范围/关键词多选/来源多选/级别/有股价联动）+ 排序（综合推荐/热度值/增速/热力值/连续上榜/最新发布/最新发现）+ 分页 + URL同步；TopicRow：榜单排名/互动量/AI 理由展开/热度值/增速/行情徽标 |
+| `/topics/:id` | TopicDetailPage | 渐变面积趋势图 + 级别徽章 + #关键词 + 谣言/值得关注标记 + AI 相关性分析（理由+置信度）+ 互动数据分项 + 股价联动卡片（今日/过去涨跌 + AI 复盘 + 刷新）+ 发布时间 |
 | 全局（所有页面） | ScanStatusBar | 顶部扫描进度条：百分比 + 阶段 + 当前来源 + 已发现条数；扫描完成短暂提示 |
+| 全局（所有页面） | ChatPanel | 右下角投资问答浮窗：Socket.io 流式问答、工具调用日志、快捷问题、停止/清空、会话持久化 |
 | `/keywords` | KeywordsPage | CRUD + 暂停/激活 |
 | `/sources` | SourcesPage | 源健康 |
 | `/settings` | SettingsPage | 配置 |
@@ -345,6 +428,7 @@ Agent
 | 发现时间 | firstSeenAt | 首次被系统抓取/发现的时间 |
 | 最新发现 | lastSeenAt | 最近一次被抓取的时间（排序用） |
 | 连续上榜 | mentionCount | 同一来源连续多轮采集到该话题的次数 |
+| 今日涨跌/过去涨跌 | pctToday / isStale | 关联A股最新涨跌；话题掉出候选范围后旧值显示"过去涨跌" |
 
 ---
 
@@ -366,21 +450,28 @@ src/
 │   │   ├── client.ts          # OpenRouter SDK（chatRequest 包装 + 超时 + 围栏剥离）
 │   │   ├── pipeline.ts        # 批量相关性（并发2路）→ verify（子集）→ classifyTiers
 │   │   └── eval/              # 相关性评估（黄金用例跑分 + AI 生成候选用例）
+│   ├── agent/
+│   │   ├── chat.ts            # Copilot：Agent 循环 + 流式 OpenRouter + 超时/重试
+│   │   └── tools.ts           # 6 个工具定义与执行（关键词/话题/统计/增速/股价联动）
+│   ├── stocks/
+│   │   ├── pipeline.ts        # 股价联动刷新（候选→提取→映射→行情→复盘→isStale）
+│   │   ├── provider.ts        # 东财 suggest/push2/push2his + 新浪 hq（GBK 解码）
+│   │   └── company-map.ts     # 关键词 → A股种子映射表
 │   ├── routes/                # keywords/topics/alerts/sources/settings/stats/agent
 │   └── notifications/         # browser.ts / email.ts
 ├── client/src/
 │   ├── pages/                 # 6 页面
-│   ├── components/            # KpiRow/TopicRow/ScanStatusBar/VelocityGrid/TopicDetailChart 等
+│   ├── components/            # KpiRow/TopicRow/ScanStatusBar/VelocityGrid/TopicDetailChart/ChatPanel 等
 │   ├── utils/format.ts        # 热度/互动量格式化 + 按来源主指标/分项
 │   └── hooks/                 # useApi / useSocket
 ├── shared/types.ts
-├── tests/                     # 单元/集成测试 + relevance 黄金用例（68 条）
-└── scripts/                   # 数据治理：官网/公司页清理、重复话题合并
+├── tests/                     # 单元/集成测试（含 stocks 测试）+ relevance 黄金用例（68 条）
+└── scripts/                   # 数据治理：官网/公司页清理、品牌噪音清理、重复话题合并
 ```
 
 ---
 
-## 11. 关键设计决策（v3.3）
+## 11. 关键设计决策（v3.7）
 
 1. **got + cheerio 而非 axios**：功能等价、内置重试/超时，保持现有稳定实现
 2. **双热度体系**：热力值（0-100 阈值/详情页）+ 热度值（无界真实量级）分离，避免归一化抹平量级
@@ -412,3 +503,11 @@ src/
 28. **7 天查重窗口**：话题身份窗口与活跃窗口统一，7 天内重现合并、超期视为新话题；存量重复合并脚本兜底
 29. **关键词软删除**：删除=停用+隐藏话题（deletedAt/isHidden），同名重加恢复；所有查询限定仍存在的关键词
 30. **调度间隔 2 小时**：扫描周期与扩展词轮换统一为 7200000ms，降低爬取与 AI 频率
+31. **matchedKeyword 归一化校验（v3.5）**：模型返回的关键词标签先与激活列表比对（大小写/空白/包含），防止别名/翻译变体导致话题失联
+32. **聊天走 Socket.io 而非 HTTP SSE（v3.6）**：开发代理下长连接不稳定（服务端写完但浏览器收不到），WebSocket 复用现有通道更可靠
+33. **前端会话持久化（v3.6）**：聊天记录写 sessionStorage、done/error 同步落盘，刷新/HMR 不丢
+34. **超时参数化 + 友好错误（v3.6）**：240/300/320s 三级可配；429/5xx 转中文提示；超时主动 chat_cancel 后端
+35. **搜索引擎跳转壳 URL 解码（v3.6/v3.7）**：Bing base64 `u=`、百度/搜狗 `/link?url=` 还原真实域名，品牌检测才能生效；搜狗不透明令牌用 HEAD 跟随
+36. **公司识别三层解析（v3.7）**：LLM 只提取公司名，代码/关联由种子映射表 → 东财搜索 → 关键词种子兜底确定性完成，避免幻觉代码
+37. **联动指标只保留今日涨跌（v3.7）**：去掉日 K 线（批量请求易被风控导致 5日/发现后大面积为空）；掉出候选范围显示"过去涨跌"（isStale）
+38. **复盘失败重试（v3.7）**：retryWithBackoff 3 次（1s/3s），仍失败留待下一轮刷新，避免 429 导致复盘永久缺失

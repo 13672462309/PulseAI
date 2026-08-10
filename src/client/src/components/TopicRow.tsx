@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import type { Engagement } from '@shared/types.js';
+import type { Engagement, StockLinkSummary } from '@shared/types.js';
 import { Icon } from './icons.js';
 import { formatHeat, formatTime, primaryEngagement } from '../utils/format.js';
 
@@ -24,6 +24,7 @@ export interface TopicRowData {
   firstSeenAt?: string | null;
   publishedAt?: string | null;
   mentionCount?: number;
+  stockLinks?: StockLinkSummary[] | null;
 }
 
 // Only sources with a real hot list get a "#N 来源" rank badge.
@@ -125,6 +126,26 @@ export function TopicRow({ topic: t }: { topic: TopicRowData }) {
             <span className="inline-flex items-center gap-1"><Icon name="radar" className="w-3 h-3" /> 发现 {formatTime(t.firstSeenAt)}</span>
             <span className="opacity-60" title="同一来源连续多轮采集到该话题的次数">连续上榜 {t.mentionCount ?? 1} 次</span>
           </div>
+
+          {t.stockLinks && t.stockLinks.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+              <span className="text-[10px] font-mono text-text-muted">行情</span>
+              {t.stockLinks.map(l => (
+                <span
+                  key={l.stockCode}
+                  className={`inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded-md border ${
+                    l.pctToday != null && l.pctToday > 0
+                      ? 'text-danger border-danger/25 bg-danger/5'
+                      : l.pctToday != null && l.pctToday < 0
+                        ? 'text-positive border-positive/25 bg-positive/5'
+                        : 'text-text-muted border-border bg-surface-elevated'
+                  }`}
+                >
+                  {l.stockName} {l.isStale ? '过去' : ''}{l.pctToday != null ? `${l.pctToday > 0 ? '+' : ''}${l.pctToday.toFixed(1)}%` : '—'}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Engagement / heat metrics */}

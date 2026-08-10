@@ -76,6 +76,18 @@ export interface TopicSummary {
   recommendScore?: number | null;
   peakHeat: number;
   mentionCount: number;
+  stockLinks?: StockLinkSummary[] | null;
+  stockRecap?: string | null;
+}
+
+export interface StockLinkSummary {
+  stockCode: string;
+  stockName: string;
+  exchange: string;
+  price: number | null;
+  pctToday: number | null;
+  isStale: boolean;
+  quoteTime: string | null;
 }
 
 export interface TopicTier {

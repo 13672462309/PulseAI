@@ -39,6 +39,7 @@ export function TopicsPage() {
     return SORTS.some(s => s.v === fromUrl) ? fromUrl : 'recommendScore';
   });
   const [tier, setTier] = useState(searchParams.get('tier') || '');
+  const [stocks, setStocks] = useState(searchParams.get('hasStocks') || '');
   const [since, setSince] = useState(searchParams.get('since') || '');
   const [keywords, setKeywords] = useState<string[]>(() => (searchParams.get('keywords') || '').split(',').filter(Boolean));
   const [sources, setSources] = useState<string[]>(() => (searchParams.get('sources') || '').split(',').filter(Boolean));
@@ -58,16 +59,17 @@ export function TopicsPage() {
     setSearchParams(p, { replace: true });
   };
 
-  const apply = (patch: Partial<{ q: string; sort: string; tier: string; since: string; keywords: string[]; sources: string[]; page: number }>) => {
-    const filtersChanged = patch.q !== undefined || patch.sort !== undefined || patch.tier !== undefined || patch.since !== undefined || patch.keywords !== undefined || patch.sources !== undefined;
+  const apply = (patch: Partial<{ q: string; sort: string; tier: string; stocks: string; since: string; keywords: string[]; sources: string[]; page: number }>) => {
+    const filtersChanged = patch.q !== undefined || patch.sort !== undefined || patch.tier !== undefined || patch.stocks !== undefined || patch.since !== undefined || patch.keywords !== undefined || patch.sources !== undefined;
     const next = {
-      q, sort, tier, since, keywords, sources,
+      q, sort, tier, stocks, since, keywords, sources,
       page: filtersChanged ? 1 : patch.page ?? page,
       ...patch,
     };
     setQ(next.q);
     setSort(next.sort);
     setTier(next.tier);
+    setStocks(next.stocks);
     setSince(next.since);
     setKeywords(next.keywords);
     setSources(next.sources);
@@ -81,9 +83,10 @@ export function TopicsPage() {
     if (keywords.length) p.set('keywords', keywords.join(','));
     if (sources.length) p.set('sources', sources.join(','));
     if (tier) p.set('tier', tier);
+    if (stocks) p.set('hasStocks', stocks);
     if (since) p.set('since', sinceIso(since));
     return `/api/v1/topics?${p}`;
-  }, [q, sort, tier, since, keywords, sources, page]);
+  }, [q, sort, tier, stocks, since, keywords, sources, page]);
 
   const { data } = useApi<{ data: TopicRowData[]; total: number }>(url);
   // Safety net: hide duplicate rows with the same normalized title
@@ -100,9 +103,9 @@ export function TopicsPage() {
   const total = data?.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / 30));
 
-  const hasFilters = Boolean(q.trim() || keywords.length || sources.length || tier || since);
+  const hasFilters = Boolean(q.trim() || keywords.length || sources.length || tier || stocks || since);
   const toggle = (list: string[], v: string) => list.includes(v) ? list.filter(x => x !== v) : [...list, v];
-  const clearFilters = () => apply({ q: '', tier: '', since: '', keywords: [], sources: [] });
+  const clearFilters = () => apply({ q: '', tier: '', stocks: '', since: '', keywords: [], sources: [] });
 
   return (
     <div className="space-y-4">
@@ -130,6 +133,11 @@ export function TopicsPage() {
           { v: 'burst', l: '爆发' },
           { v: 'hot', l: '热点' },
           { v: 'rising', l: '潜力' },
+        ]} />
+        <span className="self-center text-[11px] font-mono text-text-muted">联动</span>
+        <Select value={stocks} onChange={e => apply({ stocks: e.target.value })} opts={[
+          { v: '', l: '全部' },
+          { v: '1', l: '有股价联动' },
         ]} />
         <span className="self-center text-[11px] font-mono text-text-muted">发现时间</span>
         <Select value={since} onChange={e => apply({ since: e.target.value })} opts={TIME_RANGES} />

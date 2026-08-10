@@ -13,6 +13,7 @@ import { isLowValueContent } from './content-filter.js';
 import { normalizeTitle, type CrawlerItem } from './utils.js';
 import { broadcastNewTopic, broadcastSourceStatus, broadcastCrawlStatus } from '../socket.js';
 import { runAiPipeline } from '../ai/pipeline.js';
+import { refreshStockLinks } from '../stocks/pipeline.js';
 import type { CrawlStatus } from '../../shared/types.js';
 
 type CrawlerFn = () => Promise<CrawlerItem[]>;
@@ -104,6 +105,12 @@ export async function crawlAllSources(): Promise<number> {
         await runAiPipeline((aiProgress) => {
           updateCrawlStatus({ progress: Math.min(98, 82 + Math.round(aiProgress * 0.16)) });
         });
+        // Topic ↔ stock linkage (tiered + top-heat topics), bounded by daily limit.
+        try {
+          await refreshStockLinks();
+        } catch (err) {
+          console.error('[Scheduler] Stock link refresh error:', err);
+        }
       } catch (err) {
         console.error('[Scheduler] AI pipeline error:', err);
       }

@@ -13,7 +13,7 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "db:seed": "tsx src/server/seed.ts",
-    "test": "tsx --test tests/unit/query-expansion.test.ts tests/unit/content-filter.test.ts tests/integration/pipeline-flow.test.ts",
+    "test": "tsx --test tests/unit/query-expansion.test.ts tests/unit/content-filter.test.ts tests/unit/stocks.test.ts tests/integration/pipeline-flow.test.ts",
     "eval:relevance": "tsx src/server/eval/eval-relevance.ts",
     "eval:golden:generate": "tsx src/server/eval/generate-golden.ts",
     "postinstall": "prisma generate"

@@ -1,12 +1,13 @@
 import { useParams, Link } from 'react-router';
-import type { Engagement } from '@shared/types.js';
-import { useApi } from '../hooks/useApi.js';
+import { useState } from 'react';
+import type { Engagement, StockLinkSummary } from '@shared/types.js';
+import { useApi, apiFetch } from '../hooks/useApi.js';
 import { TopicDetailChart } from '../components/TopicDetailChart.js';
 import { Icon } from '../components/icons.js';
 import { engagementFields, formatHeat } from '../utils/format.js';
 
 interface HP { heatIndex: number; heatScore: number | null; growthRate: number | null; recordedAt: string; }
-interface TD { id: number; title: string; url: string | null; heatIndex: number; heatScore: number | null; velocityScore: number | null; growthRate: number | null; peakHeat: number; mentionCount: number; sourceRank: number | null; aiVerified: number; isRumor: boolean | null; isActionable: boolean | null; matchReason: string | null; matchConfidence: number | null; engagement?: Engagement | null; matchedKeyword: string | null; tier: string | null; firstSeenAt: string; lastSeenAt: string; publishedAt?: string | null; source?: { name: string; slug: string }; history: HP[]; }
+interface TD { id: number; title: string; url: string | null; heatIndex: number; heatScore: number | null; velocityScore: number | null; growthRate: number | null; peakHeat: number; mentionCount: number; sourceRank: number | null; aiVerified: number; isRumor: boolean | null; isActionable: boolean | null; matchReason: string | null; matchConfidence: number | null; engagement?: Engagement | null; matchedKeyword: string | null; tier: string | null; firstSeenAt: string; lastSeenAt: string; publishedAt?: string | null; source?: { name: string; slug: string }; history: HP[]; stockLinks?: StockLinkSummary[] | null; stockRecap?: string | null; }
 
 const TIER_BADGE: Record<string, { icon: string; label: string; cls: string }> = {
   burst: { icon: 'rocket', label: '爆发', cls: 'bg-danger/10 text-danger border-danger/25' },
@@ -17,7 +18,29 @@ const TIER_BADGE: Record<string, { icon: string; label: string; cls: string }> =
 export function TopicDetailPage() {
   const { id } = useParams();
   const { data: t } = useApi<TD>(`/api/v1/topics/${id}`);
+  const [stockLinks, setStockLinks] = useState<StockLinkSummary[] | null>(null);
+  const [stockRecap, setStockRecap] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const engFields = t ? engagementFields(t.engagement, t.source?.slug) : [];
+  const links = stockLinks ?? t?.stockLinks ?? [];
+  const recap = stockRecap ?? t?.stockRecap ?? null;
+
+  const refreshStocks = async () => {
+    if (!t) return;
+    setRefreshing(true);
+    try {
+      const r = await apiFetch<{ stockLinks: StockLinkSummary[]; stockRecap: string | null }>(
+        `/api/v1/topics/${t.id}/stocks/refresh`,
+        { method: 'POST' },
+      );
+      setStockLinks(r.stockLinks);
+      setStockRecap(r.stockRecap);
+    } catch {
+      // keep old data on failure
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   if (!t) return <div className="space-y-3"><div className="skeleton h-8 w-1/2" /><div className="skeleton h-24 w-full rounded-xl" /><div className="skeleton h-60 w-full rounded-xl" /></div>;
   if (t.id === undefined) return <div className="card p-8 text-center"><p className="text-text-muted">话题未找到</p><Link to="/topics" className="text-brand text-sm mt-2 inline-block">返回列表</Link></div>;
@@ -81,6 +104,49 @@ export function TopicDetailPage() {
         )}
       </div>
 
+      <div className="card p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-heading font-semibold text-text-primary">股价联动</h3>
+          <button
+            onClick={refreshStocks}
+            disabled={refreshing}
+            className="text-[11px] font-mono px-2.5 py-1.5 rounded-lg border border-border text-text-muted hover:border-brand/40 hover:text-brand transition-colors disabled:opacity-40 cursor-pointer"
+          >
+            {refreshing ? '刷新中…' : '刷新行情'}
+          </button>
+        </div>
+
+        {links.length > 0 ? (
+          <div className="space-y-2">
+            {links.map((l) => (
+              <div key={l.stockCode} className="rounded-xl border border-border bg-surface-elevated/50 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[13px] font-mono font-semibold text-text-primary">
+                    {l.stockName}
+                    <span className="text-text-muted text-[10px] font-mono ml-2">{l.stockCode} · {l.exchange}</span>
+                  </span>
+                  <span className={`text-sm font-bold tabular-nums ${pctClass(l.pctToday)}`}>{fmtPct(l.pctToday)}</span>
+                </div>
+                <div className="flex gap-3 text-[10px] font-mono text-text-muted mt-1">
+                  <span>{l.isStale ? '过去涨跌' : '今日涨跌'} {fmtPct(l.pctToday)}</span>
+                  {l.quoteTime && <span>更新 {new Date(l.quoteTime).toLocaleString('zh-CN', { hour12: false })}</span>}
+                </div>
+              </div>
+            ))}
+            {recap && (
+              <div className="rounded-xl border border-brand/20 bg-brand-soft/40 p-3">
+                <p className="text-[12px] text-text-secondary leading-relaxed">🤖 {recap}</p>
+                <p className="text-[10px] text-text-muted mt-1">基于行情数据，不构成投资建议</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-[12px] text-text-muted">
+            {refreshing ? '正在获取关联行情…' : '暂无关联行情，可点击"刷新行情"获取（入榜或热度前 10 的话题会自动关联）'}
+          </p>
+        )}
+      </div>
+
       <TopicDetailChart history={t.history || []} />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -99,4 +165,15 @@ function StatPill({ value, label, color }: { value: string; label: string; color
 
 function Meta({ label, value }: { label: string; value: string }) {
   return <div className="card p-3.5 text-center"><span className="text-base font-heading font-bold text-text-primary">{value}</span><span className="block text-[10px] text-text-muted mt-1">{label}</span></div>;
+}
+
+function fmtPct(v: number | null): string {
+  return v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`;
+}
+
+function pctClass(v: number | null): string {
+  if (v == null) return 'text-text-muted';
+  if (v > 0) return 'text-danger'; // A股习惯：红涨
+  if (v < 0) return 'text-positive'; // 绿跌
+  return 'text-text-muted';
 }

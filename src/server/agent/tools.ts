@@ -80,6 +80,18 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'get_stock_links',
+      description: '获取某话题关联的A股行情（今日涨跌，过期显示过去涨跌）与AI复盘文案。',
+      parameters: {
+        type: 'object',
+        properties: { topicId: { type: 'number', description: '话题 ID' } },
+        required: ['topicId'],
+      },
+    },
+  },
 ];
 
 async function visibleKeywordNames(): Promise<string[]> {
@@ -248,6 +260,36 @@ async function runGetTrending(args: any): Promise<ToolResult> {
   };
 }
 
+async function runGetStockLinks(args: any): Promise<ToolResult> {
+  const id = Number(args?.topicId);
+  if (!Number.isFinite(id)) throw new Error('无效的话题 ID');
+  const [topic, links] = await Promise.all([
+    prisma.topic.findUnique({ where: { id }, select: { id: true, title: true, stockRecap: true } }),
+    prisma.topicStockLink.findMany({
+      where: { topicId: id },
+      orderBy: { pctSinceDiscovery: 'desc' },
+      take: 5,
+    }),
+  ]);
+  if (!topic) throw new Error(`话题 #${id} 不存在`);
+  return {
+    name: 'get_stock_links',
+    content: JSON.stringify({
+      topic: topic.title,
+      stockRecap: topic.stockRecap ?? null,
+      stockLinks: links.map((l) => ({
+        stockCode: l.stockCode,
+        stockName: l.stockName,
+        exchange: l.exchange,
+        price: l.price,
+        pctToday: l.pctToday,
+        isStale: l.isStale,
+      })),
+    }).slice(0, MAX_RESULT_CHARS),
+    summary: `找到 ${links.length} 只关联A股`,
+  };
+}
+
 export async function executeTool(name: string, argsRaw: string): Promise<ToolResult> {
   let args: any = {};
   if (argsRaw && argsRaw.trim()) {
@@ -263,6 +305,7 @@ export async function executeTool(name: string, argsRaw: string): Promise<ToolRe
     case 'get_topic_detail': return runGetTopicDetail(args);
     case 'get_stats': return runGetStats();
     case 'get_trending': return runGetTrending(args);
+    case 'get_stock_links': return runGetStockLinks(args);
     default: throw new Error(`未知工具: ${name}`);
   }
 }

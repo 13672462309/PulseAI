@@ -77,10 +77,12 @@ model Topic {
   recommendScore  Float?    // comprehensive recommendation score (tier + velocity + heat + freshness)
   peakHeat        Float    @default(0)
   mentionCount    Int      @default(1)
+  stockRecap      String?   // AI 生成的话题-股价关联复盘（可选，异动时生成）
 
   source          Source   @relation(fields: [sourceId], references: [id])
   history         TopicHistory[]
   alerts          Alert[]
+  stockLinks      TopicStockLink[]
 
   @@index([normalizedTitle])
   @@index([firstSeenAt])
@@ -89,6 +91,29 @@ model Topic {
   @@index([recommendScore])
   @@index([sourceId])
   @@index([velocityScore])
+}
+
+// ── 话题-股价联动 ──
+model TopicStockLink {
+  id                Int      @id @default(autoincrement())
+  topicId           Int
+  stockCode         String
+  stockName         String
+  exchange          String   @default("A股")
+  secid             String?  // 东财 secid，如 1.600519 / 0.000001
+  price             Float?   // 最新价
+  pctToday          Float?   // 今日涨跌幅 %
+  pct5d             Float?   // 5 个交易日涨跌幅 %
+  pctSinceDiscovery Float?   // 发现后涨跌幅 %（核心联动指标）
+  trendJson         String?  // JSON: 发现以来日收盘序列（迷你走势图，最多 30 点）
+  isStale           Boolean  @default(false) // 话题已不在候选范围，显示"过去涨跌"
+  quoteTime         DateTime?
+  fetchedAt         DateTime @default(now())
+
+  topic Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@unique([topicId, stockCode])
+  @@index([stockCode])
 }
 
 // ── 话题历史（时间序列） ──

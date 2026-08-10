@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../db.js';
 import type { Engagement } from '../../shared/types.js';
+import { refreshTopicStocks } from '../stocks/pipeline.js';
 
 export const topicsRouter = Router();
 
@@ -18,6 +19,18 @@ export function parseEngagementJson(raw: unknown): Engagement | null {
   return null;
 }
 
+export function serializeStockLink(l: any) {
+  return {
+    stockCode: l.stockCode,
+    stockName: l.stockName,
+    exchange: l.exchange,
+    price: l.price,
+    pctToday: l.pctToday,
+    isStale: !!l.isStale,
+    quoteTime: l.quoteTime ? new Date(l.quoteTime).toISOString() : null,
+  };
+}
+
 // Strip legacy fields no longer written (aiSummary/aiCategory/rawHeat) and
 // parse the stored engagement JSON so the API exposes a plain object.
 function serializeTopic(topic: any) {
@@ -26,6 +39,9 @@ function serializeTopic(topic: any) {
   delete out.aiCategory;
   delete out.rawHeat;
   out.engagement = parseEngagementJson(out.engagement);
+  if (Array.isArray(out.stockLinks)) {
+    out.stockLinks = out.stockLinks.map(serializeStockLink);
+  }
   return out;
 }
 
@@ -50,7 +66,7 @@ topicsRouter.get('/', async (req: Request, res: Response) => {
   try {
     const {
       keyword, keywords, source, sources, category, verified,
-      sort = 'recommendScore', order = 'desc',
+      sort = 'recommendScore', order = 'desc', hasStocks,
       since, page = '1', limit = '30'
     } = req.query;
 
@@ -93,6 +109,10 @@ topicsRouter.get('/', async (req: Request, res: Response) => {
       // 发现时间范围：按首次被系统发现的时间过滤
       where.firstSeenAt = { gte: new Date(since as string) };
     }
+    if (hasStocks === 'true' || hasStocks === '1') {
+      // 只展示已进行股价联动的话题（存在 TopicStockLink 记录）
+      where.stockLinks = { some: {} };
+    }
 
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
@@ -115,7 +135,10 @@ topicsRouter.get('/', async (req: Request, res: Response) => {
         orderBy,
         skip,
         take: safeLimit,
-        include: { source: { select: { name: true, slug: true } } },
+        include: {
+          source: { select: { name: true, slug: true } },
+          stockLinks: { orderBy: { fetchedAt: 'desc' }, take: 3 },
+        },
       }),
       prisma.topic.count({ where }),
     ]);
@@ -193,7 +216,10 @@ topicsRouter.get('/trending', async (req: Request, res: Response) => {
       },
       orderBy: { velocityScore: 'desc' },
       take: limit,
-      include: { source: { select: { name: true, slug: true } } },
+      include: {
+        source: { select: { name: true, slug: true } },
+        stockLinks: { orderBy: { fetchedAt: 'desc' }, take: 3 },
+      },
     });
     res.json(topics.map(serializeTopic));
   } catch (err) {
@@ -215,7 +241,10 @@ topicsRouter.get('/hot', async (req: Request, res: Response) => {
       },
       orderBy: { heatScore: { sort: 'desc', nulls: 'last' } },
       take: limit,
-      include: { source: { select: { name: true, slug: true } } },
+      include: {
+        source: { select: { name: true, slug: true } },
+        stockLinks: { orderBy: { fetchedAt: 'desc' }, take: 3 },
+      },
     });
     res.json(topics.map(serializeTopic));
   } catch (err) {
@@ -234,6 +263,7 @@ topicsRouter.get('/:id', async (req: Request, res: Response) => {
       include: {
         source: { select: { name: true, slug: true } },
         history: { orderBy: { recordedAt: 'desc' }, take: 200 },
+        stockLinks: { orderBy: [{ pctSinceDiscovery: 'desc' }, { fetchedAt: 'desc' }], take: 20 },
       },
     });
     if (!topic || topic.isHidden || (topic.matchedKeyword && !kwNames.includes(topic.matchedKeyword))) {
@@ -266,5 +296,25 @@ topicsRouter.get('/:id/history', async (req: Request, res: Response) => {
     res.json(history);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch topic history' });
+  }
+});
+
+// POST /api/v1/topics/:id/stocks/refresh — manual quote refresh for one topic
+topicsRouter.post('/:id/stocks/refresh', async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(String(req.params.id));
+    const topic = await prisma.topic.findUnique({ where: { id }, select: { id: true, isHidden: true } });
+    if (!topic || topic.isHidden) return res.status(404).json({ error: 'Topic not found' });
+
+    const saved = await refreshTopicStocks(id);
+    const links = await prisma.topicStockLink.findMany({
+      where: { topicId: id },
+      orderBy: { pctSinceDiscovery: 'desc' },
+    });
+    const topicWithRecap = await prisma.topic.findUnique({ where: { id }, select: { stockRecap: true } });
+    res.json({ saved, stockRecap: topicWithRecap?.stockRecap ?? null, stockLinks: links.map(serializeStockLink) });
+  } catch (err) {
+    console.error('Failed to refresh topic stocks:', err);
+    res.status(500).json({ error: 'Failed to refresh stocks' });
   }
 });
