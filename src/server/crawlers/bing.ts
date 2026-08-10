@@ -1,7 +1,7 @@
 import * as cheerio from 'cheerio';
 import got from 'got';
 import prisma from '../db.js';
-import { calcProxyHeatScore, randomUA, type CrawlerItem } from './utils.js';
+import { calcProxyHeatScore, randomUA, resolveSearchUrl, type CrawlerItem } from './utils.js';
 import { selectQueriesForChannel, currentExpansionRound } from './keyword-queries.js';
 
 /**
@@ -40,7 +40,7 @@ export async function crawlBing(): Promise<CrawlerItem[]> {
         if (found.length >= 8) return false;
         const titleEl = $(el).find('h2 a, h3 a').first();
         const title = titleEl.text().trim();
-        const link = titleEl.attr('href') || '';
+        const link = resolveSearchUrl(titleEl.attr('href') || '');
         const snippet = $(el).find('.b_caption p, .b_snippet, .news_snpt').first().text().trim().slice(0, 160);
         if (title && title.length > 3) found.push({ title, url: link, snippet });
       });

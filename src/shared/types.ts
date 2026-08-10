@@ -47,6 +47,8 @@ export interface SocketEvents {
   crawl_status: (status: CrawlStatus) => void;
   subscribe_category: (category: string) => void;
   subscribe_keyword: (keywordId: number) => void;
+  chat_request: (payload: { requestId: string; message: string; history: ChatMessage[] }) => void;
+  chat_event: (payload: { requestId: string; event: ChatStreamEvent }) => void;
 }
 
 export interface TopicSummary {
@@ -112,3 +114,17 @@ export interface AgentSearchResult {
   query: string;
   total: number;
 }
+
+// ── Agent Chat (Copilot) ──
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export type ChatStreamEvent =
+  | { type: 'status'; text: string }
+  | { type: 'tool_start'; name: string; args: string }
+  | { type: 'tool_end'; name: string; summary: string }
+  | { type: 'delta'; text: string }
+  | { type: 'done' }
+  | { type: 'error'; message: string };

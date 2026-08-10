@@ -44,3 +44,47 @@ export function randomUA(): string {
   ];
   return uas[Math.floor(Math.random() * uas.length)];
 }
+
+/**
+ * Resolve search-engine redirect wrapper URLs to the real target URL.
+ * Bing stores the target as base64url in the `u` param (prefixed with `a1`),
+ * Baidu/Sogou use `/link?url=<encoded>`. Without this, brand-domain detection
+ * sees bing.com/sogou.com instead of huawei.com/apple.com, so official pages
+ * slip through the content filter.
+ */
+export function resolveSearchUrl(rawUrl: string): string {
+  if (!rawUrl) return rawUrl;
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.toLowerCase();
+
+    // Bing: https://www.bing.com/ck/a?...&u=a1<base64url(target)>
+    if (host.includes('bing.com') && parsed.pathname.includes('/ck/a')) {
+      const u = parsed.searchParams.get('u') || '';
+      const decoded = decodeBingTarget(u);
+      if (decoded && /^https?:\/\//i.test(decoded)) return decoded;
+    }
+
+    // Baidu/Sogou: /link?url=<urlencoded target>
+    if ((host.includes('baidu.com') || host.includes('sogou.com')) && parsed.pathname.startsWith('/link')) {
+      const u = parsed.searchParams.get('url') || '';
+      if (u && /^https?:\/\//i.test(u)) return u;
+    }
+  } catch {
+    // keep the original URL on any parse failure
+  }
+  return rawUrl;
+}
+
+function decodeBingTarget(u: string): string {
+  if (!u) return '';
+  try {
+    let s = u;
+    // Bing prefixes the base64 payload with a1; strip it before decoding.
+    if (s.startsWith('a1')) s = s.slice(2);
+    const padded = s + '='.repeat((4 - (s.length % 4)) % 4);
+    return Buffer.from(padded.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+  } catch {
+    return '';
+  }
+}

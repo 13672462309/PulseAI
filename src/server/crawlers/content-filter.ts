@@ -2,18 +2,25 @@
 // Removes encyclopedia/dictionary entries, official-site homepages, download/tutorial
 // content etc. — noise that is keyword-relevant but worthless for stock-trading discovery.
 // Rules are title substring matches + URL patterns + brand-domain homepage detection.
+import { resolveSearchUrl } from './utils.js';
 
 const TITLE_BLOCKLIST = [
   // encyclopedia / dictionary
   '百科', '词典', '英汉词典', '单词',
+  'wikipedia', 'Wikipedia',
   // generic-knowledge questions ("什么是半导体", "什么叫半导体")
   '是什么', '是什么意思', '什么意思', '什么是', '什么叫',
   // official sites / downloads
   '官网', '官方网站', '官方下载', '免费下载', '安全下载', '下载站',
   // app-download style titles ("下载DeepSeek App_...", "Download Claude | ...")
   'App_', 'Download',
+  // e-commerce / official mall pages
+  '官方商城', '商城首页', 'VMALL', '品质保证', '百强企业', '7天退货', '请返回商城',
+  // brand slogan homepages ("华为 - 构建万物互联的智能世界 - HUAWEI")
+  '构建万物互联', 'Fully Connected', 'Intelligent World',
   // tutorials / how-to content
   '保姆级', '教程', '技巧', '速通', '教学', '手把手', '从零开始', '零基础', '免费使用',
+  'Guide', 'guide',
   // how-to guides / mirror sites ("Claude 新手指南", "国内使用指南", "镜像站")
   '指南', '镜像站',
   // video-site / portal channel pages ("爱奇艺-电影频道", "豆瓣电影", "免费电影在线观看")
@@ -26,6 +33,8 @@ const TITLE_BLOCKLIST = [
 // Regex patterns: "下载" outside of the "下载量" context is a download-site signal
 const TITLE_PATTERNS: RegExp[] = [
   /下载(?!量)/,
+  // very short brand+official titles ("小米官方。", "华为商城")
+  /^[\u4e00-\u9fa5A-Za-z0-9·]{1,6}(官方|商城)[。\.]?$/,
   // Company registry / official profile pages ("华为技术有限公司", "小米科技有限责任公司")
   /^[\u4e00-\u9fa5A-Za-z0-9·&（）()\- ]{2,24}(有限责任公司|股份有限公司|有限公司)$/,
   // Company + store/official markers ("小米科技有限责任公司-小米商城-Xiaomi")
@@ -45,6 +54,13 @@ const URL_BLOCKLIST = [
   'imdb.com',
   'dramx.com',             // semiconductor news portal (no deep content)
   '163.com/dy/media',      // netease media-account homepages
+  'vmall.com',             // Huawei official mall
+  'bnn.in.th',             // Thai electronics retailer product pages
+  'studio7online.com',     // Thai Apple reseller product pages
+  'wikipedia.org',         // encyclopedia entries
+  'play.google.com',       // app-store listing pages
+  'istudio.store',         // Thai Apple reseller product pages
+  'anthropic.com/news/introducing-claude', // stale 2023 launch page, not a hot signal
 ];
 
 // Domain core word → Chinese/alternate brand aliases. Used to catch official
@@ -64,6 +80,8 @@ const BRAND_ALIASES: Record<string, string[]> = {
   tencent: ['腾讯'],
   alibaba: ['阿里巴巴', '阿里'],
   baidu: ['百度'],
+  vmall: ['华为商城', 'vmall', '华为'],
+  studio7: ['studio7', 'iphone', 'apple', 'ไอโฟน'],
 };
 
 /**
@@ -117,6 +135,9 @@ function isBrandHomepage(title: string, url: string): boolean {
 export function isLowValueContent(title: string, url: string): boolean {
   const t = title?.trim() || '';
   if (!t) return true; // empty titles are always noise
+  // Search engines wrap real URLs (bing.com/ck/a, baidu/sogou /link?url=) —
+  // resolve first so brand-domain detection sees the actual target domain.
+  const resolvedUrl = resolveSearchUrl(url || '');
 
   for (const pattern of TITLE_BLOCKLIST) {
     if (t.includes(pattern)) return true;
@@ -128,7 +149,7 @@ export function isLowValueContent(title: string, url: string): boolean {
   // Short "A | B" brand-page titles ("DeepSeek | 深度求索")
   if (BRAND_PAGE_TITLE.test(t)) return true;
 
-  const u = url || '';
+  const u = resolvedUrl;
   for (const pattern of URL_BLOCKLIST) {
     if (u.includes(pattern)) return true;
   }

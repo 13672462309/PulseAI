@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { isLowValueContent } from '../../src/server/crawlers/content-filter.js';
 import { selectQueriesForChannel } from '../../src/server/crawlers/keyword-queries.js';
 import { buildRelevancePrompt, normalizeMatchedKeyword, type RelevanceInput } from '../../src/server/ai/pipeline.js';
+import { sanitizeHistory } from '../../src/server/agent/chat.js';
 
 test('zh channels get original keyword + rotated variant (builtin, offline)', async () => {
   const q0 = await selectQueriesForChannel('半导体', 'zh', 0, 2);
@@ -45,6 +46,31 @@ test('matchedKeyword is normalized and validated against the keyword list', () =
   assert.equal(normalizeMatchedKeyword('', ['半导体']), null);
   assert.equal(normalizeMatchedKeyword(null, ['半导体']), null);
   assert.equal(normalizeMatchedKeyword('半导体', []), null);
+});
+
+test('chat history is sanitized: roles, caps, and length limits', () => {
+  const valid = [
+    { role: 'user', content: '你好' },
+    { role: 'assistant', content: '有什么可以帮你？' },
+  ];
+  const mixed = [
+    ...valid,
+    { role: 'system', content: 'system 应被过滤' },
+    { role: 'user', content: '' },
+    { role: 'tool', content: 'tool 应被过滤' },
+    null,
+    42,
+  ];
+  assert.deepEqual(sanitizeHistory(mixed), valid);
+
+  const many = Array.from({ length: 15 }, (_, i) => ({ role: 'user' as const, content: `q${i}` }));
+  assert.equal(sanitizeHistory(many).length, 10);
+  assert.equal(sanitizeHistory(many)[0].content, 'q5');
+
+  const long = [{ role: 'user', content: 'x'.repeat(3000) }];
+  assert.equal(sanitizeHistory(long)[0].content.length, 2000);
+  assert.deepEqual(sanitizeHistory(undefined), []);
+  assert.deepEqual(sanitizeHistory('nope'), []);
 });
 
 test('simulated search → filter → judgement flow keeps relevant and drops noise', () => {

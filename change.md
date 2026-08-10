@@ -17,7 +17,8 @@
 | v3.2 | `476641a` | 价值信号展示（理由/置信度/互动量/榜单排名/值得关注）+ 一行一话题 UI + 扫描进度 |
 | v3.3 | `aac7c2a` | 相关性优化：全渠道查询扩展 + 意图上下文 + 摘要判定 + 测试评估体系 |
 | v3.4 | `ac1447d` | 相关性调优（快路径移除）+ 管线资源优化（verifyRetry）+ 官网/公司页过滤治理 + 7 天查重合并 + 2 小时扫描 + 关键词软删除恢复 |
-| v3.5 | —（未提交） | 修复 P1-2：matchedKeyword 归一化校验，防止 AI 标签变体导致话题失联 |
+| v3.5 | `2a5b0c6` | 修复 P1-2：matchedKeyword 归一化校验，防止 AI 标签变体导致话题失联 |
+| v3.6 | —（未提交） | 投资问答 Copilot：SSE 流式 + 工具调用 Agent（B 功能） |
 
 ---
 
@@ -344,7 +345,96 @@
 
 ---
 
-## 八、技术栈演变
+## 八、v3.5 → v3.6：投资问答 Copilot（2026-08-10）
+
+### 8.1 新功能（B 方向）
+
+- 前端新增全局聊天浮窗（所有页面右下角），支持自然语言提问："今天有什么值得关注？""光模块近期热点""华为产业链动态"等
+- 后端新增 `POST /api/v1/agent/chat`：SSE 流式输出 + Agent 工具循环（最多 3 轮）
+- 5 个内置工具，全部基于现有数据库查询：
+  - `list_keywords`：当前监控关键词及话题数
+  - `search_topics`：按文本/关键词/级别/时间范围搜索话题
+  - `get_topic_detail`：话题详情（热度/增速/谣言/互动/历史）
+  - `get_stats`：系统统计（活跃/爆发/热点/潜力/源健康）
+  - `get_trending`：近 7 天增速榜
+- 模型：deepseek-v4-flash（OpenRouter 流式 REST）；工具轮 maxTokens 1024、最终回答 2048
+- 成本与健壮性：单轮 240s 超时 + 整体 300s 截止（可用 `AI_CHAT_TIMEOUT_MS` / `AI_CHAT_DEADLINE_MS` 覆盖，默认值已放宽以降低慢生成误杀）、超时转为友好中文提示（修复 "This operation was aborted" 裸报错）、工具结果截断 4000 字符、消息上限 2000 字符、客户端断开自动中止
+- 会话无状态：前端携带最近 10 条历史，服务端 `sanitizeHistory` 校验角色与长度
+- 修复：客户端断开检测改用 `res.on('close')` —— 原先监听 `req.on('close')` 会在 POST 请求体读完后触发，导致 AI 调用刚启动就被取消（表现为报 "This operation was aborted" 或一直卡在"正在分析问题…"）
+- 传输层加固：前端问答由 HTTP SSE 改为 **Socket.io**（`chat_request` / `chat_event`），绕开开发代理对长连接的稳定性问题；服务端按 socket 维护待处理控制器，断开自动中止，并发请求拒绝
+- 前端兜底：WebSocket 断开时自动重试一次，重试仍失败提示"连接中断，请重试"；200s 无响应看门狗兜底
+- 对话持久化：聊天记录写入 `sessionStorage`，页面刷新/HMR 重载不再清空；回答中断时保留已生成的部分内容并标注
+- `dev:server` 增加 `--exclude ./dist --exclude ./data --exclude ./eval-reports`，避免构建产物/数据库文件变化触发后端自动重启（防止问答生成中途被重启打断）
+- 健壮性修复：前端 200s 看门狗超时后主动发送 `chat_cancel` 中止后端请求，不再残留"上一轮仍在进行中"；新提问自动顶掉残留的旧请求（按 controller 身份清理，避免误删新请求）
+- 限流友好提示：OpenRouter 429 显示"问太快啦，AI 服务限流（429），请稍等片刻再试"，5xx 显示"AI 服务暂时不可用"
+- 新增文件：`src/server/agent/tools.ts`、`src/server/agent/chat.ts`、`src/client/src/components/ChatPanel.tsx`
+- 修改：`routes/agent.ts`（/chat）、`shared/types.ts`（ChatMessage/ChatStreamEvent）、`App.tsx`（挂载浮窗）、`icons.tsx`（message-circle/send）
+- 测试：`sanitizeHistory` 单元测试（角色过滤/窗口截断/长度限制）
+
+### 8.2 说明与限制
+
+- 流式仅用于最终回答；工具轮次内部静默执行，前端展示工具调用日志
+- 回答不构成投资建议，仅做信息整理与信号提示
+- 刷新页面即清空对话（无服务端会话存储）
+
+### 8.3 官网/商城内容过滤修复（2026-08-10）
+
+- **根因**：Bing/百度/搜狗返回的是跳转壳 URL（`bing.com/ck/a?...&u=`、`/link?url=`），品牌域名检测看到的是 `bing.com`/`sogou.com` 而不是 `huawei.com`/`apple.com`，官网/商城页面因此漏网
+- **修复**：新增 `resolveSearchUrl`（解码 Bing `u` 参数里的 base64 真实地址、百度/搜狗 `url` 参数），内容过滤先解码再判定；Bing/通用搜索/搜狗爬虫入库前也先解码，保证库里存真实 URL
+- **规则补充**：标题黑名单新增 `官方商城/商城首页/VMALL/请返回商城/品质保证/百强企业/7天退货/构建万物互联/Fully Connected/Intelligent World/Wikipedia/Guide`；短标题"品牌+官方/商城"正则；品牌库新增 `vmall`/`studio7`；URL 黑名单新增 `vmall.com`/`bnn.in.th`/`studio7online.com`/`wikipedia.org`/`play.google.com`/`istudio.store` 及旧的 Claude 发布公告页
+- **搜狗跳转壳修复**：搜狗 `/link?url=` 是不透明令牌（不可解码），对疑似品牌/官方页标题用 HEAD 跟随重定向还原真实域名后再入库
+- **存量清理**：新增 `scripts/cleanup-brand-noise.ts`（默认 dry-run，`--apply` 删除）；共清理 31 条官网/商城/零售商/Wikipedia/应用商店噪音（删除前已备份 `data/backups/pre-cleanup-brand-noise-20260810.db`）
+
+### 8.4 Bug 修复清单（2026-08-10，情况 / 原因 / 修改）
+
+#### Bug 1：投资问答报 "This operation was aborted"
+- **情况**：在问答助手里提问后立即返回一段英文 AbortError，无任何回答。
+- **原因**：服务端用 `req.on('close')` 监听客户端断开，但 Node 中 POST 请求体读完后 `req` 就会触发 close，导致 AI 调用刚启动就被 AbortController 取消。
+- **修改**：改用 `res.on('close')` 监听真正的连接断开；取消/超时统一转为友好中文提示。
+
+#### Bug 2：一直卡在"正在分析问题…"，或服务端正常结束但前端收不到内容
+- **情况**：提问后长期停留在"正在分析问题…"；服务端日志显示 `response closed ... writableEnded=true`（正常写完）且无 error，但浏览器什么都没收到。
+- **原因**：两层问题——① 取消路径被"静默结束"吞掉，前端等不到 done/error；② 聊天走 HTTP SSE 长连接，经 Vite 开发代理/HMR 存在不稳定，事件写了但没到浏览器。
+- **修改**：服务端只在连接真正断开时静默结束，其余错误一律推给前端；前端对流意外结束兜底提示；最终把聊天传输整体迁移到 **Socket.io**（`chat_request` / `chat_event`），绕开 HTTP 长连接与代理问题。
+
+#### Bug 3：回答生成到一半消失、刷新后对话被清空
+- **情况**：回答已流式输出，随后整段消失；页面刷新/重载后欢迎语和快捷问题也不见了。
+- **原因**：对话只存在组件内存中，页面刷新/HMR 重载即丢失；持久化依赖渲染后的 effect，存在"重载恰好发生在写入之前"的竞态。
+- **修改**：聊天记录写入 `sessionStorage`，done/error/中断时同步落盘（不再等 effect）；中断时保留已生成的部分内容并标注；快捷问题改为常驻显示；新增"停止"按钮并通知后端取消。
+
+#### Bug 4：上一轮问答结束后仍提示"上一轮问答仍在进行中，请稍候"
+- **情况**：超时或停止后立刻再提问，被拒绝且长时间无法恢复。
+- **原因**：前端看门狗超时后没有通知后端取消，后端请求仍在运行并一直占用该 socket 的进行中槽位。
+- **修改**：前端超时主动发送 `chat_cancel`；后端收到新提问时自动顶掉残留的旧请求（按 controller 身份清理，避免误删新请求）。
+
+#### Bug 5：OpenRouter 429 裸报错
+- **情况**：直接显示 `OpenRouter 429: Rate exceeded.`，可读性差。
+- **原因**：未对限流/服务端错误状态码做友好化处理。
+- **修改**：429 → "问太快啦，AI 服务限流（429），请稍等片刻再试"；5xx → "AI 服务暂时不可用（xxx），请稍后重试"。
+
+#### Bug 6：200s 超时误杀慢生成
+- **情况**：生成耗时超过 200 秒被判超时，但结果其实可能正常完成。
+- **原因**：前端看门狗固定 200s，既小于后端截止时间，又不可配置，属于兜底值误杀。
+- **修改**：超时参数化——后端单轮 `AI_CHAT_TIMEOUT_MS=240s`、整体 `AI_CHAT_DEADLINE_MS=300s`，前端 `VITE_AI_CHAT_CLIENT_TIMEOUT_MS=320s`（必须长于后端）；默认值放宽并在 `.env.example` 注明。
+
+#### Bug 7：官网/商城话题漏网（Bing/百度/搜狗跳转壳）
+- **情况**：华为商城 VMALL、华为/苹果/Claude/Tesla 官网首页等进入话题列表。
+- **原因**：搜索引擎返回跳转壳 URL（Bing `ck/a` 的 base64 `u=` 参数、百度/搜狗 `/link?url=`），品牌域名检测只能看到 `bing.com`/`sogou.com`；`vmall.com` 等商城域名不在品牌库；缺少商城/标语类标题规则。
+- **修改**：新增 `resolveSearchUrl` 解码真实 URL（Bing base64、百度/搜狗 url 参数）；爬虫入库前解码；内容过滤先解码再判定；补充标题规则（`VMALL/官方商城/商城首页/请返回商城/品质保证/百强企业/7天退货/构建万物互联/Fully Connected/Intelligent World/Wikipedia/Guide`、短标题"品牌+官方/商城"正则）；品牌库新增 `vmall`/`studio7`；URL 黑名单新增 `vmall.com/bnn.in.th/studio7online.com/wikipedia.org/play.google.com/istudio.store` 及旧的 Claude 发布公告页；新增 `scripts/cleanup-brand-noise.ts` 存量清理（共删 31 条，删除前已备份）。
+
+#### Bug 8：搜狗不透明令牌导致英文华为官网页漏网
+- **情况**：`Huawei - Building a Fully Connected, Intelligent World`（搜狗来源）仍进入列表。
+- **原因**：搜狗 `/link?url=` 是随机不透明令牌，无法离线解码，品牌域名检测失效。
+- **修改**：搜狗爬虫对疑似品牌/官方页标题（含华为/苹果/Claude/Tesla/小米/官方等特征）用 HEAD 跟随重定向还原真实域名后再入库；标题规则补充英文标语拦截。
+
+#### Bug 9：AI 返回的关键词标签未校验/未归一化，导致话题失联（P1-2）
+- **情况**：模型返回的 `matchedKeyword` 与激活关键词不一致（如 `deepseek` → `DeepSeek` 大小写变体、`半导体` → `semiconductor` 英文翻译、`iphone` → `苹果` 别名、`AI大模型` → `AI` 缩写），话题入库后因前端按精确匹配过滤而"没被隐藏却谁也看不见"；库中已出现 `semiconductor`/`iPhone`/`huawei` 等与任何关键词都对不上的标签。
+- **原因**：相关性判定 prompt 让模型返回"匹配到的关键词"，但模型可能输出别名/翻译/大小写变体；代码拿到什么就存什么（`pipeline.ts` 结果解析与落库处），未与激活关键词列表比对；SQLite 字符串比较大小写敏感（实测 `'deepseek' = 'DeepSeek'` 结果为 0），仅大小写不一致就会匹配失败。
+- **修改**：新增 `normalizeMatchedKeyword`，落库前做归一化比对——① 忽略大小写/空白的精确匹配 → 使用关键词原文；② 返回标签包含关键词（如 `华为公司` → `华为`）→ 取最长匹配；③ 关键词包含返回标签（如 `ai` → `AI大模型`）→ 取最短匹配；④ 均无法匹配 → `matchedKeyword` 置 null，话题保持待判定留待下轮重判（不误删、不误标）。同时强化 prompt："matchedKeyword 必须严格取自关键词列表原文，禁止别名/翻译/大小写变体"；无法匹配时输出告警日志；新增 `normalizeMatchedKeyword` 单元测试（大小写/空白/包含/无法匹配场景）。该修复已随 v3.5 提交（`2a5b0c6`）。
+
+---
+
+## 九、技术栈演变
 
 | 层 | v2 | v3 | 说明 |
 |----|-----|-----|------|
@@ -359,7 +449,7 @@
 
 ---
 
-## 九、关键修复清单（按严重性）
+## 十、关键修复清单（按严重性）
 
 1. **OpenRouter SDK 调用格式错误** → AI 语义判定从未生效（全项目影响最大的 bug）
 2. **DeepSeek JSON 代码围栏** → 批量判定静默失败、管线"看似运行实则不动"
@@ -375,7 +465,7 @@
 
 ---
 
-## 十、遗留与后续建议
+## 十一、遗留与后续建议
 
 - 增速分阈值（30/100）为常量，可基于真实数据分布校准
 - 跨源话题聚类未实现（同一话题多源为独立记录）

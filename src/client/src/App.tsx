@@ -2,6 +2,7 @@ import { Outlet, NavLink, useLocation } from 'react-router';
 import { useState, useEffect } from 'react';
 import { Icon } from './components/icons.js';
 import { ScanStatusBar } from './components/ScanStatusBar.js';
+import { ChatPanel } from './components/ChatPanel.js';
 
 export function App() {
   return (
@@ -19,6 +20,7 @@ export function App() {
         </main>
       </div>
       <MobileNav />
+      <ChatPanel />
     </div>
   );
 }

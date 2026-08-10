@@ -131,7 +131,8 @@ GET         /api/v1/stats/velocity    # 增速 Top
 POST        /api/v1/crawl/trigger     # 手动触发（进行中返回 409）
 GET         /api/v1/crawl/status      # 扫描进度（百分比/阶段/当前来源/条数）
 GET/PUT     /api/v1/settings          # 系统设置
-GET         /api/v1/agent/*           # Agent 端点
+GET         /api/v1/agent/*           # Agent 端点（搜索/趋势/状态）
+POST        /api/v1/agent/chat        # 投资问答 Copilot（SSE 流式 + 工具调用）
 ```
 
 ## Agent Skill 使用
