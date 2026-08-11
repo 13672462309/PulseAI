@@ -1,0 +1,4 @@
+interface:
+  display_name: "PulseAI 事件投资雷达"
+  short_description: "内置 8 源搜索的事件投资雷达技能，搜索由 Python 完成，相关性分析由当前 AI 模型完成"
+  default_prompt: "帮我搜索关键词 半导体 的最新热点"

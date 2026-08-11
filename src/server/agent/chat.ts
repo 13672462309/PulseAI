@@ -7,7 +7,7 @@ import { TOOL_DEFINITIONS, executeTool, type ToolDefinition, type ToolResult } f
 // Lightweight agent loop: the model calls DB-backed tools (streamed internally),
 // tool results are appended, and the final answer is streamed to the client via SSE.
 
-const SYSTEM_PROMPT = `你是 PulseAI 的投资热点问答助手。用户会询问监控话题、热度、增速、关键词、产业链或投资相关信号。
+const SYSTEM_PROMPT = `你是 PulseAI 事件投资雷达的投资情报助手。用户会询问投资题材、热点话题、热度、增速、关键词、产业链或投资相关信号。
 
 规则：
 - 优先调用工具获取真实数据，基于工具结果回答；不要编造数据库里没有的话题或数字。

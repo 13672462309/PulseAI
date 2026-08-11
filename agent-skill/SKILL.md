@@ -1,10 +1,10 @@
-# PulseAI — AI 热点监控 Agent Skill
+# PulseAI — 事件投资雷达 Agent Skill
 
 ## 描述
 
-PulseAI 是一个 AI 驱动的热点监控工具。它自动从多个平台（微博、知乎、百度、头条、B站、36氪、Twitter、GitHub）采集热点信息，利用 AI 甄别真假内容，并通过增速评分发现"正在变热"的潜力话题。
+PulseAI 是一个事件驱动的 A 股投资雷达。它自动从多个平台（微博、百度、B站、36氪、搜狗、Bing、通用搜索、Hacker News）采集热点信息，利用 AI 判定与投资题材的相关性、甄别谣言，并通过增速评分发现"正在变热"的潜力话题，自动关联受益标的。
 
-作为 Agent Skill，它允许其他 AI（如 Claude Code）直接调用热点查询能力。
+作为 Agent Skill，它允许其他 AI（如 Claude Code）直接调用投资雷达的查询能力。
 
 ---
 
@@ -77,6 +77,6 @@ npm run dev
 
 - **Base URL**: `http://localhost:3456/api/v1`
 - **认证**: 无需认证（本地部署）
-- **数据源**: 微博、知乎、百度、头条、B站、36氪、GitHub、Twitter(X)、网络搜索
-- **AI**: OpenRouter (gemini-2.5-flash / claude-sonnet-4)
+- **数据源**: 微博、百度、B站、36氪、搜狗、Bing、通用搜索、Hacker News
+- **AI**: OpenRouter (deepseek-v4-flash)
 - **实时推送**: Socket.io

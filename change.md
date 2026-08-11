@@ -1,7 +1,7 @@
 # 变更记录（CHANGELOG）
 
-> 记录 PulseAI（原 ai-hotmonitor）从 v1 到 v3.7 的全部功能迭代、架构修改与技术栈演变
-> 最后更新: 2026-08-10
+> 记录 PulseAI（原 ai-hotmonitor）从 v1 到 v3.8 的全部功能迭代、架构修改与技术栈演变
+> 最后更新: 2026-08-11
 
 ---
 
@@ -20,6 +20,7 @@
 | v3.5 | `2a5b0c6` | 修复 P1-2：matchedKeyword 归一化校验，防止 AI 标签变体导致话题失联 |
 | v3.6 | `548c7fd` | 投资问答 Copilot + 健壮性/官网过滤修复 |
 | v3.7 | —（本次提交） | 话题-股价联动：东财行情 + 新浪降级 + AI 复盘（D 功能） |
+| v3.8 | — | 品牌定位更名为 PulseAI · 事件投资雷达（文案/文档层，代码逻辑不变） |
 
 ---
 
@@ -510,3 +511,24 @@
 - 36氪被火山引擎 WAF 拦截（浏览器可达、脚本客户端被拦），修复方案已出但未实施
 - OpenRouter 429：已通过减少重复调用缓解，429 退避重试尚未实施
 - 跨源话题聚类仍未实现，前端按标题去重为临时兜底
+
+---
+
+## 十三、v3.7 → v3.8：品牌定位更名为「PulseAI · 事件投资雷达」（2026-08-11）
+
+### 13.1 变更内容
+
+- 产品对外定位由"AI 热点监控指挥中心"更名为 **PulseAI · 事件投资雷达**，一句话定位：**事件驱动的 A 股投资雷达——从热点中发现题材，用 AI 判定相关性，自动关联受益标的，把热点变成投资信号**
+- 涉及文件：
+  - **界面层**：`src/client/index.html`（浏览器标题）、`src/client/src/App.tsx`（侧边栏品牌副标题 + 导航"指挥中心"→"投资雷达"）、`src/client/src/pages/DashboardPage.tsx`（Hero 标题与副标语）
+  - **文档层**：`README.md`（标题/引言）、`REQUIREMENTS.md`（标题/项目背景/F-18 首页命名）、`DESIGN.md`（标题/活跃窗口表述）、`package.json`（description）
+  - **内部文案**：`src/server/agent/chat.ts`（Copilot 系统提示词）、`src/server/notifications/email.ts`（邮件页脚）、`src/server/routes/stats.ts`（注释）、`src/server/eval/generate-golden.ts`（测试 prompt）、`design-system/pulseai/MASTER.md`、`agent-skill/SKILL.md`（含数据源/模型信息修正为当前 8 源与 deepseek-v4-flash）、`skills/pulseai/SKILL.md`
+
+### 13.2 未改动项
+
+- `package.json` / `package-lock.json` 的 `name`（pulseai）
+- 运行时标识：`CACHE_NAME`、`STORAGE_KEY`、`mailto:admin@pulseai.local`
+- 历史测试用例中的"热点监控"标注（golden-cases）
+- 物理目录名（design-system/pulseai、skills/pulseai、agent-skill 等）
+
+> 说明：本次仅为品牌与文案调整，不影响任何代码逻辑、数据结构或 API。

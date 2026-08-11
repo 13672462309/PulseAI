@@ -1,7 +1,7 @@
 {
   "name": "pulseai",
   "version": "1.0.0",
-  "description": "AI-powered hot topic monitoring tool for investors",
+  "description": "Event-driven A-share investment radar powered by AI hot-topic monitoring",
   "private": true,
   "type": "module",
   "scripts": {

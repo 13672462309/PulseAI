@@ -55,7 +55,7 @@ export async function sendEmailAlert(params: {
             <a href="${params.url}" style="display: inline-block; background: #00FF41; color: #020617; padding: 10px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 14px;">查看详情 →</a>
           </div>
           <div style="background: #020617; padding: 12px 20px; text-align: center; font-size: 11px; color: #475569;">
-            由 PulseAI 热点监控系统自动发送
+            由 PulseAI 事件投资雷达自动发送
           </div>
         </div>
       `,

@@ -1,8 +1,8 @@
 openapi: "3.0.3"
 info:
-  title: PulseAI Agent Skill
+  title: PulseAI 事件投资雷达 Agent Skill
   description: |
-    热点监控工具 - AI-powered hot topic monitoring and early warning system.
+    事件驱动的 A 股投资雷达 - Event-driven A-share investment radar.
     Query trending topics, monitor keywords, and receive hot topic alerts.
     Supports Chinese and international data sources.
   version: "1.0.0"

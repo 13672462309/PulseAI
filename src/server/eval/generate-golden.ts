@@ -12,7 +12,7 @@ interface GeneratedCase {
 const OUT_PATH = new URL('../../../tests/relevance/golden-cases.candidate.json', import.meta.url);
 
 async function generateForKeyword(keyword: string): Promise<GeneratedCase[]> {
-  const prompt = `你是测试用例生成器。为热点监控关键词「${keyword}」生成 3 个正例和 3 个负例，用于评估 AI 相关性判定。
+  const prompt = `你是测试用例生成器。为投资雷达监控关键词「${keyword}」生成 3 个正例和 3 个负例，用于评估 AI 相关性判定。
 
 要求：
 - 每条包含 title（真实新闻标题风格）、snippet（可选摘要）、expected（true=应判定相关）、reason（一句话说明为什么）

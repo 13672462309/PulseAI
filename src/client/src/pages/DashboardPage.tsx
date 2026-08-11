@@ -25,10 +25,10 @@ export function DashboardPage() {
         <div>
           <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">
             <span className="text-text-primary">实时热点</span>
-            <span className="text-gradient"> 监控雷达</span>
+            <span className="text-gradient"> 投资雷达</span>
           </h1>
           <p className="text-text-secondary text-sm mt-2 max-w-md leading-relaxed">
-            AI 驱动的关键词热点追踪 · 多源交叉验证 · 增速监控 · 抢先一步发现趋势
+            事件驱动的投资雷达：热点 → 题材 → 受益标的，一条链路发现机会
           </p>
           <div className="flex flex-wrap items-center gap-2 mt-4">
             <span className="inline-flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-1 rounded-full bg-brand-soft text-brand border border-brand/20">

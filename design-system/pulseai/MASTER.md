@@ -6,10 +6,10 @@
 
 ---
 
-**Project:** PulseAI
+**Project:** PulseAI · 事件投资雷达
 **Generated:** 2026-08-06 12:57:45
 **Last Refined:** 2026-08-06
-**Category:** AI Hot-Topic Monitoring / Investment Dashboard (Dark Mode)
+**Category:** Event-Driven Investment Radar / Investment Dashboard (Dark Mode)
 **Design Dials:** Variance 7/10 (Balanced / Modern) | Motion 6/10 (Standard) | Density 8/10 (Dense / Dashboard)
 
 ---

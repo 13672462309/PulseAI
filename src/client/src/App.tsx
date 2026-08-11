@@ -38,11 +38,11 @@ function Sidebar() {
           <span className="block text-lg font-heading font-bold tracking-tight leading-none">
             <span className="text-gradient">PulseAI</span>
           </span>
-          <span className="block text-text-muted text-[9px] font-mono mt-1 uppercase tracking-[0.2em]">live radar</span>
+          <span className="block text-text-muted text-[9px] font-mono mt-1 uppercase tracking-[0.2em]">事件投资雷达</span>
         </div>
       </div>
       <nav className="flex-1 px-3 py-5 space-y-1">
-        <SideNav to="/" current={loc.pathname} icon={<Icon name="grid" />} label="指挥中心" />
+        <SideNav to="/" current={loc.pathname} icon={<Icon name="grid" />} label="投资雷达" />
         <SideNav to="/topics" current={loc.pathname} icon={<Icon name="trend" />} label="话题浏览" />
         <SideNav to="/keywords" current={loc.pathname} icon={<Icon name="search" />} label="关键词" />
         <SideNav to="/sources" current={loc.pathname} icon={<Icon name="layers" />} label="数据源" />
